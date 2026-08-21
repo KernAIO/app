@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  "globalEnv": ["NODE_ENV", "CI"],
+  "globalPassThroughEnv": ["DATABASE_URL", "NATS_URL", "VALKEY_URL", "S3_*", "KERN_*", "BETTER_AUTH_*", "PUBLIC_*"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", "build/**", ".svelte-kit/**"] },
+    "dev": { "cache": false, "persistent": true, "dependsOn": ["^build"] },
+    "lint": { "dependsOn": ["^build"] },
+    "typecheck": { "dependsOn": ["^build"] },
+    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "db:migrate": { "cache": false }
+  }
+}

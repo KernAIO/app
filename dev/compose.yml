@@ -1,0 +1,46 @@
+# Infrastructure only, for local development (services run via `pnpm dev`).
+name: kern-dev
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: kern
+      POSTGRES_PASSWORD: kern
+      POSTGRES_DB: kern
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "max_connections=200"]
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data", "./postgres-init:/docker-entrypoint-initdb.d:ro"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U kern"], interval: 5s, timeout: 5s, retries: 10 }
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes: ["natsdata:/data"]
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports: ["6379:6379"]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: kern, MINIO_ROOT_PASSWORD: kernkernkern }
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "sleep 3; mc alias set local http://minio:9000 kern kernkernkern && mc mb -p local/kern || true"
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+  livekit:
+    image: livekit/livekit-server:latest
+    profiles: [calls]
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports: ["7880:7880", "7881:7881", "7882:7882/udp"]
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    profiles: [preview]
+    ports: ["3500:3000"]
+volumes: { pgdata: {}, natsdata: {}, miniodata: {} }

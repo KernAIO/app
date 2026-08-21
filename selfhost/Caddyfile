@@ -1,0 +1,41 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$KERN_DOMAIN} {
+	encode zstd gzip
+
+	# realtime + chat service
+	@chat path /api/chat/* /ws /ws/*
+	handle @chat {
+		reverse_proxy chat:4100
+	}
+	# mail service
+	handle_path /api/mail/* {
+		rewrite * /api/mail{uri}
+		reverse_proxy mail:4200
+	}
+	# collaborative editing (Yjs)
+	handle /collab* {
+		reverse_proxy collab:4300
+	}
+	# object storage (presigned URLs)
+	handle_path /s3/* {
+		reverse_proxy minio:9000
+	}
+	# core API (auth, workspaces, all other modules) + OpenAPI
+	handle /api/* {
+		reverse_proxy core:4000
+	}
+	# web app (SvelteKit)
+	handle {
+		reverse_proxy app:3000
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+		-Server
+	}
+}

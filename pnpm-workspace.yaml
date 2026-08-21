@@ -1,0 +1,5 @@
+# Umbrella DEV workspace only. Each repo under repos/ is its own git repository
+# (see scripts/dev-setup.sh). pnpm links all @kernalo/* packages locally here.
+packages:
+  - 'repos/*'
+  - 'repos/*/packages/*'

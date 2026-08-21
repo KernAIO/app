@@ -1,0 +1,29 @@
+{
+  "name": "kern-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Kern umbrella dev workspace + self-host distribution",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.30.3",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "setup": "bash scripts/dev-setup.sh",
+    "infra": "docker compose -f dev/compose.yml up -d",
+    "infra:down": "docker compose -f dev/compose.yml down",
+    "infra:reset": "docker compose -f dev/compose.yml down -v",
+    "dev": "turbo run dev --concurrency 20",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:migrate": "turbo run db:migrate",
+    "format": "biome format --write .",
+    "status": "bash scripts/status.sh",
+    "pull": "bash scripts/pull-all.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
+    "turbo": "^2.10.0",
+    "typescript": "~5.9.3"
+  }
+}

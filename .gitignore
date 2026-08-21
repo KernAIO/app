@@ -1,0 +1,12 @@
+# umbrella dev workspace: sibling repos are cloned here, never committed
+/repos/
+node_modules/
+pnpm-lock.yaml
+.turbo/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.install.lock/
