@@ -5,7 +5,9 @@
   "description": "Kern umbrella dev workspace + self-host distribution",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.30.3",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "setup": "bash scripts/dev-setup.sh",
     "infra": "docker compose -f dev/compose.yml up -d",
@@ -25,5 +27,14 @@
     "@biomejs/biome": "^2.5.0",
     "turbo": "^2.10.0",
     "typescript": "~5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "better-auth": "1.7.1",
+      "@better-auth/core": "1.7.1",
+      "@better-auth/api-key": "1.7.1",
+      "@better-auth/passkey": "1.7.1",
+      "@better-auth/sso": "1.7.1"
+    }
   }
 }
