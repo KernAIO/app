@@ -29,5 +29,13 @@ Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with pub
 - API surface is contract-first (Zod + oRPC → REST/OpenAPI); modules own their Postgres schema (`mod_<id>`) with `workspace_id` + row-level security on tenant tables; cross-module access only through `kernel.call()` and events.
 - UI: Svelte 5 + Tailwind v4, design tokens from `app/DESIGN.md`, i18n via Paraglide, RTL and dark mode are first-class.
 
+## Continuous integration
+
+While the repositories are private, the shared `@kernalo/*` packages live in GitHub Packages, and a
+repository's own `GITHUB_TOKEN` cannot read packages published by a sibling repository. CI therefore
+uses an organisation secret named `PACKAGES_TOKEN` — a token with `read:packages` (plus
+`write:packages` for the `kernel` and `modules` repositories, which publish). Once the repositories
+are public this secret is no longer needed.
+
 ## Security
 Please report vulnerabilities privately — see [SECURITY.md](./SECURITY.md). Do not open public issues for security problems.
