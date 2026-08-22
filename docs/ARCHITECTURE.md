@@ -14,8 +14,8 @@ See `docs/PLAN.md` for the full plan and `docs/adr/` for decisions.
                                               Postgres 18 (per-module schemas, RLS) · Valkey · MinIO · LiveKit(opt)
 ```
 
-- **Kernel** (`@kernaio/kernel`): `defineModule()` manifest, module registry, typed event bus (in-proc + NATS), `call()` for cross-module/service requests, authz engine, jobs (pg-boss), settings/secrets, provider interfaces (mail, search, storage, realtime), migrations runner.
-- **Contracts** (`@kernaio/contracts`): Zod schemas, oRPC contracts, event payloads, permission keys, error codes — the only thing two modules/services share.
-- **Modules** (`@kernaio/module-*`): `/contract`, `/server` (routes, schema, migrations, events, jobs, permissions, automations), `/client` (Svelte routes, nav, presenters, slots, i18n).
+- **Kernel** (`@kernhq/kernel`): `defineModule()` manifest, module registry, typed event bus (in-proc + NATS), `call()` for cross-module/service requests, authz engine, jobs (pg-boss), settings/secrets, provider interfaces (mail, search, storage, realtime), migrations runner.
+- **Contracts** (`@kernhq/contracts`): Zod schemas, oRPC contracts, event payloads, permission keys, error codes — the only thing two modules/services share.
+- **Modules** (`@kernhq/module-*`): `/contract`, `/server` (routes, schema, migrations, events, jobs, permissions, automations), `/client` (Svelte routes, nav, presenters, slots, i18n).
 - **Tenancy**: global `users/workspaces/memberships/notifications`; every tenant table has `workspace_id` + RLS via `SET LOCAL app.workspace_id`.
 - **Realtime**: one WS per client to `chat`; server events `{ws, module, entity, id, op}` → TanStack Query invalidation; NATS fan-out across instances.

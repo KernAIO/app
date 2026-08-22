@@ -3,6 +3,6 @@
   "extends": ["config:recommended", ":semanticCommits", "group:allNonMajor"],
   "schedule": ["before 6am on monday"],
   "packageRules": [
-    { "matchPackagePatterns": ["^@kernaio/"], "automerge": true, "schedule": ["at any time"] }
+    { "matchPackagePatterns": ["^@kernhq/"], "automerge": true, "schedule": ["at any time"] }
   ]
 }

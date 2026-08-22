@@ -11,11 +11,11 @@ Thanks for your interest in Kern — an open-source, self-hostable all-in-one wo
 ## Development setup
 ```bash
 git clone https://github.com/KernAIO/kern && cd kern
-pnpm setup      # clones all repos into ./repos and installs (pnpm links @kernaio/*)
+pnpm setup      # clones all repos into ./repos and installs (pnpm links @kernhq/*)
 pnpm infra      # Postgres 18 · NATS · Valkey · MinIO · Mailpit (docker compose)
 pnpm dev        # runs app + services with hot reload
 ```
-Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with published `@kernaio/*` packages.
+Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with published `@kernhq/*` packages.
 
 ## Pull requests
 1. Fork/branch from `main`; keep PRs focused and reasonably small.
@@ -31,7 +31,7 @@ Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with pub
 
 ## Continuous integration
 
-The shared `@kernaio/*` packages are published to npm from the `kernel` and `modules` repositories, so
+The shared `@kernhq/*` packages are published to npm from the `kernel` and `modules` repositories, so
 anyone can install them without credentials. CI in the other repositories installs them from npm,
 which is why a change to a contract lands and publishes before its consumers are updated.
 
