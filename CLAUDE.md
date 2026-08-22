@@ -37,6 +37,13 @@ Mailpit for `mail`. Things learned the hard way:
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
 
+## Writing
+Documentation — READMEs, guides, runbooks, `docs/`, and any procedure someone follows — uses the
+`adhd-friendly-ste-technical-writer` skill in `.claude/skills/`: goal first, one action per step,
+short sentences, conditions before commands, an observable result after every important action.
+It is a house style inspired by ASD-STE100, not certified compliance — do not claim otherwise.
+It governs documents for readers. Code comments and commit messages keep the voice they have.
+
 ## Quality bar
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.
 - UI follows `app/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
