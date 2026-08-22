@@ -21,7 +21,9 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Node 24 (`nvm use 24`), pnpm 10, TypeScript ~5.9, ESM/NodeNext, Biome for lint+format (run `pnpm exec biome check --write <paths>` before committing), Vitest.
 - Contracts first: changes to `@kernhq/contracts` / module contracts land (and build) before their consumers.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
-- Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400.
+- Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
+  allocation, the next free number, and the map of every repository are generated —
+  `node .claude/skills/kern-repos/scripts/sync.mjs`, then read the `kern-repos` skill.
 - Dev DB on this machine: Homebrew Postgres 18 at `localhost:5432` (`kern`/`kern`); the compose Postgres listens on `${KERN_PG_PORT:-5432}` (5433 here).
 
 ## CI

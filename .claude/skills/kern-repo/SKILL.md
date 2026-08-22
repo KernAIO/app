@@ -89,8 +89,9 @@ A repo nobody clones does not exist. In the umbrella (`kern`):
 1. `scripts/dev-setup.sh` — add the name to the `REPOS=(...)` array.
 2. `pnpm-workspace.yaml` already globs `repos/*` and `repos/*/packages/*`; nothing to do unless the
    layout is unusual.
-3. Claim a port and record it in `CLAUDE.md`: app 5173 · core 4000 · chat 4100 · mail 4200 ·
-   collab 4300 · docs 4400 — next free is 4500. Put it in the repo's `.env.example` too.
+3. Claim a port and record it in `CLAUDE.md`. The current allocation and the next free number are
+   in `kern-repos` → `references/inventory.md`; do not count by hand, it already accounts for the
+   repositories that sit outside the pnpm workspace. Put it in the repo's `.env.example` too.
 4. `selfhost/docker-compose.yml`: a service block using the `x-kern-env` anchor, `restart:
    unless-stopped`, and the image tag `${KERN_VERSION}`.
 5. `selfhost/Caddyfile`: a route. Everything lives on one domain — `/api/<name>/*` to the service,
@@ -98,6 +99,9 @@ A repo nobody clones does not exist. In the umbrella (`kern`):
 6. `selfhost/.env.example`: any variable the compose block references, with a safe default and a
    comment saying what it is for.
 7. The umbrella `README.md` and `docs/ARCHITECTURE.md` list the services. Add it there.
+8. Regenerate the repository map, in this same commit:
+   `node .claude/skills/kern-repos/scripts/sync.mjs`. It picks up the new repository, its port and
+   anything it publishes. See the `kern-repos` skill.
 
 Missing (4)–(6) is the classic failure: it works on the laptop and self-hosters get a 502.
 
