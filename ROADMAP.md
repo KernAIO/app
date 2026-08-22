@@ -69,10 +69,14 @@ Google Calendar sync · WebDAV · virtual office and call recording · whiteboar
 Six slices, in this order. Each is finished when somebody can do the thing end to end, not when the
 code type-checks.
 
-1. **Every tracker capability is reachable.** The tracker's server offers 137 procedures; the
-   interface reaches about a quarter of them. Components, versions, saved views, triage, intake,
-   reports, time tracking and imports have no screens at all. This is the largest amount of finished
-   work in the project delivering nothing, and it comes first.
+1. **Every tracker capability is reachable.** *In progress.* The tracker is now customisable end to
+   end: a project starts from one of four team templates, an administrator adds a custom field and
+   decides where it appears on each work item type, and the issue renders it. Comments, attachments,
+   relations, sub-issues, links and approvals are reachable; the list and the board group by a custom
+   field; `relation` and `formula` fields work; the public intake form is built from the type's
+   layout. **Still without screens:** components, versions, saved views, the triage queue, the
+   intake form itself, reports, worklogs and timesheets, imports, issue templates and recurring
+   issues.
 2. **A conversation about an issue.** An issue has its own channel; a message becomes an issue and
    links back. Both modules exist — this is the seam that makes "one application" true rather than
    two applications sharing a sidebar.
@@ -80,7 +84,7 @@ code type-checks.
    consumer. Spaces, pages, an editor, version history, publishing.
 4. **Anyone can install it.** The images are public, the one-command install works on a clean
    machine, and the documentation site is live.
-5. **It works in four languages.** Arabic and German are at 155 of 611 strings. Right-to-left
+5. **It works in four languages.** Arabic and German are at 155 of about 800 strings. Right-to-left
    verified on every screen, not only the ones we remembered.
 6. **It is safe to run.** A security review, the outstanding findings from the interface and service
    audits, and a permission matrix that is tested rather than assumed.
