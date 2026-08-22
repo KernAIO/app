@@ -69,14 +69,16 @@ Google Calendar sync · WebDAV · virtual office and call recording · whiteboar
 Six slices, in this order. Each is finished when somebody can do the thing end to end, not when the
 code type-checks.
 
-1. **Every tracker capability is reachable.** *In progress.* The tracker is now customisable end to
+1. **Every tracker capability is reachable.** *Nearly there.* The tracker is customisable end to
    end: a project starts from one of four team templates, an administrator adds a custom field and
-   decides where it appears on each work item type, and the issue renders it. Comments, attachments,
-   relations, sub-issues, links and approvals are reachable; the list and the board group by a custom
-   field; `relation` and `formula` fields work; the public intake form is built from the type's
-   layout. **Still without screens:** components, versions, saved views, the triage queue, the
-   intake form itself, reports, worklogs and timesheets, imports, issue templates and recurring
-   issues.
+   decides where it appears on each work item type, and the issue renders it. Reachable now:
+   comments with mentions and attachments, relations, sub-issues, links, approvals, triage,
+   grouping by a custom field, `relation` and `formula` fields, saved views, components, versions
+   and labels, time tracking, and reports on burndown, velocity, created-versus-resolved and time.
+   **Still without screens:** imports, issue templates, recurring issues, the workflow editor, and
+   the public intake form — the form's questions are derived from the layout, but the page a
+   stranger fills in does not exist yet.
+
 2. **A conversation about an issue.** An issue has its own channel; a message becomes an issue and
    links back. Both modules exist — this is the seam that makes "one application" true rather than
    two applications sharing a sidebar.
