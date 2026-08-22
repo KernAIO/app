@@ -31,9 +31,9 @@ Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with pub
 
 ## Continuous integration
 
-The shared `@kernaio/*` packages are published from the `kernel` and `modules` repositories. CI in the
-other repositories installs them from the registry, so a change to a contract lands and publishes
-before its consumers are updated.
+The shared `@kernaio/*` packages are published to npm from the `kernel` and `modules` repositories, so
+anyone can install them without credentials. CI in the other repositories installs them from npm,
+which is why a change to a contract lands and publishes before its consumers are updated.
 
 ## Security
 Please report vulnerabilities privately — see [SECURITY.md](./SECURITY.md). Do not open public issues for security problems.
