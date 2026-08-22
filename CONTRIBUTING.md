@@ -10,12 +10,12 @@ Thanks for your interest in Kern — an open-source, self-hostable all-in-one wo
 
 ## Development setup
 ```bash
-git clone https://github.com/KernALO/kern && cd kern
-pnpm setup      # clones all repos into ./repos and installs (pnpm links @kernalo/*)
+git clone https://github.com/KernAIO/kern && cd kern
+pnpm setup      # clones all repos into ./repos and installs (pnpm links @kernaio/*)
 pnpm infra      # Postgres 18 · NATS · Valkey · MinIO · Mailpit (docker compose)
 pnpm dev        # runs app + services with hot reload
 ```
-Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with published `@kernalo/*` packages.
+Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with published `@kernaio/*` packages.
 
 ## Pull requests
 1. Fork/branch from `main`; keep PRs focused and reasonably small.
@@ -31,11 +31,9 @@ Requirements: Node 24, pnpm 10, Docker. Each repo also works standalone with pub
 
 ## Continuous integration
 
-While the repositories are private, the shared `@kernalo/*` packages live in GitHub Packages, and a
-repository's own `GITHUB_TOKEN` cannot read packages published by a sibling repository. CI therefore
-uses an organisation secret named `PACKAGES_TOKEN` — a token with `read:packages` (plus
-`write:packages` for the `kernel` and `modules` repositories, which publish). Once the repositories
-are public this secret is no longer needed.
+The shared `@kernaio/*` packages are published from the `kernel` and `modules` repositories. CI in the
+other repositories installs them from the registry, so a change to a contract lands and publishes
+before its consumers are updated.
 
 ## Security
 Please report vulnerabilities privately — see [SECURITY.md](./SECURITY.md). Do not open public issues for security problems.

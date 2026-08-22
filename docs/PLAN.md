@@ -6,11 +6,11 @@ Kern is a new open-source, self-hostable **all-in-one work platform**: Jira-clas
 
 Decisions already made by the owner:
 - **Frontend:** Svelte (SvelteKit), installable PWA that feels like a native app, RTL/i18n (fa/ar) from day one.
-- **Backend:** Node.js. **Multi-repo microservices from day 1** under GitHub org **`KernALO`** (owner will transfer `mirzaaghazadeh/Kern` → `KernALO/app`; I create the other repos).
+- **Backend:** Node.js. **Multi-repo microservices from day 1** under GitHub org **`KernAIO`** (owner will transfer `mirzaaghazadeh/Kern` → `KernAIO/app`; I create the other repos).
 - **v1 must include:** issues/projects/process, chat, docs/drive, HR, automation, mail (per-workspace SMTP/providers + per-user IMAP/SMTP inbox), multi-workspace w/ cross-workspace notifications, roles/groups/permissions, **video/audio calls (LiveKit), Recruiting/ATS + CRM/Leads, AI assistant (BYO key), time tracking**.
 - **Design:** I decide (not based on existing files in the folder).
 
-Decision I'm making on the open question (license): **AGPL-3.0 for all public repos + a CLA** (contributors grant KernALO relicensing rights). AGPL lets everyone self-host/modify, forces SaaS competitors to open their changes, and the CLA keeps the door open for Kern Cloud / enterprise add-ons in a private repo later (same model as Plane, Twenty, Mattermost-ish). Easy to change before the first public release.
+Decision I'm making on the open question (license): **AGPL-3.0 for all public repos + a CLA** (contributors grant KernAIO relicensing rights). AGPL lets everyone self-host/modify, forces SaaS competitors to open their changes, and the CLA keeps the door open for Kern Cloud / enterprise add-ons in a private repo later (same model as Plane, Twenty, Mattermost-ish). Easy to change before the first public release.
 
 > Honest note on multi-repo microservices: it is the owner's call and the plan follows it. The cost (contract versioning, cross-repo changes, more containers) is mitigated by (a) a **small number of services with real runtime reasons**, (b) one shared **`kernel`** runtime so "which module runs in which service" is configuration, (c) an **umbrella dev workspace** that links all repos locally so day-to-day it feels like one monorepo, (d) automated prerelease publishing of shared packages.
 
@@ -92,20 +92,20 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 
 ## 4. Architecture
 
-### 4.1 Repos & services (GitHub org `KernALO`)
+### 4.1 Repos & services (GitHub org `KernAIO`)
 
 | Repo | Type | Purpose |
 |---|---|---|
-| `KernALO/kern` | umbrella | Project face: README, **self-host** (`docker-compose.yml`, profiles, `install.sh`, Caddyfile), architecture/ADR docs, **dev workspace** (`pnpm-workspace.yaml` linking sibling clones), release manifests, issue templates, CLA. |
-| `KernALO/app` | service | SvelteKit PWA (moved from `mirzaaghazadeh/Kern`). Hosts every module's `client` part. |
-| `KernALO/core` | service | Fastify + kernel runtime. Hosts: identity/auth (Better Auth), workspaces, members, roles/permissions, notifications, settings, files, search, webhooks, importers + modules: tracker, hr, recruit, crm, time, calendar, automation, docs(meta), drive(meta), ai, calls. Also ships `worker` entrypoint (pg-boss). |
-| `KernALO/chat` | service | Kernel runtime hosting **chat** module + **realtime gateway** (WebSocket hub for ALL modules, presence, typing, push fan-out). |
-| `KernALO/mail` | service | Kernel runtime hosting **mail** module: IMAP sync (imapflow, IDLE), outbound providers, inbound intake. |
-| `KernALO/collab` | service | Hocuspocus (Yjs) server for docs/rich text; persists Y.Doc to Postgres, snapshots for search. |
-| `KernALO/kernel` | library | `@kernalo/kernel` (module SDK/runtime, event bus, authz, jobs, settings, search/file/mail provider interfaces), `@kernalo/contracts` (Zod schemas, oRPC contracts, event types, permission keys), `@kernalo/ui` (Svelte design system), `@kernalo/sdk` (typed API client for app & 3rd parties), `@kernalo/testing`. |
-| `KernALO/modules` | library | First-party modules monorepo: `@kernalo/module-<id>` each exporting `/contract`, `/server`, `/client` (+ `/migrations`). Community modules follow the same shape in their own repos. |
-| `KernALO/docs` | site | docs.kern… (SvelteKit/Starlight), module dev guide, API reference (from OpenAPI). |
-| `KernALO/cloud` (private, later) | — | Billing/SaaS control plane, enterprise features. Out of v1 scope. |
+| `KernAIO/kern` | umbrella | Project face: README, **self-host** (`docker-compose.yml`, profiles, `install.sh`, Caddyfile), architecture/ADR docs, **dev workspace** (`pnpm-workspace.yaml` linking sibling clones), release manifests, issue templates, CLA. |
+| `KernAIO/app` | service | SvelteKit PWA (moved from `mirzaaghazadeh/Kern`). Hosts every module's `client` part. |
+| `KernAIO/core` | service | Fastify + kernel runtime. Hosts: identity/auth (Better Auth), workspaces, members, roles/permissions, notifications, settings, files, search, webhooks, importers + modules: tracker, hr, recruit, crm, time, calendar, automation, docs(meta), drive(meta), ai, calls. Also ships `worker` entrypoint (pg-boss). |
+| `KernAIO/chat` | service | Kernel runtime hosting **chat** module + **realtime gateway** (WebSocket hub for ALL modules, presence, typing, push fan-out). |
+| `KernAIO/mail` | service | Kernel runtime hosting **mail** module: IMAP sync (imapflow, IDLE), outbound providers, inbound intake. |
+| `KernAIO/collab` | service | Hocuspocus (Yjs) server for docs/rich text; persists Y.Doc to Postgres, snapshots for search. |
+| `KernAIO/kernel` | library | `@kernaio/kernel` (module SDK/runtime, event bus, authz, jobs, settings, search/file/mail provider interfaces), `@kernaio/contracts` (Zod schemas, oRPC contracts, event types, permission keys), `@kernaio/ui` (Svelte design system), `@kernaio/sdk` (typed API client for app & 3rd parties), `@kernaio/testing`. |
+| `KernAIO/modules` | library | First-party modules monorepo: `@kernaio/module-<id>` each exporting `/contract`, `/server`, `/client` (+ `/migrations`). Community modules follow the same shape in their own repos. |
+| `KernAIO/docs` | site | docs.kern… (SvelteKit/Starlight), module dev guide, API reference (from OpenAPI). |
+| `KernAIO/cloud` (private, later) | — | Billing/SaaS control plane, enterprise features. Out of v1 scope. |
 
 **Why these service boundaries**: chat/realtime (persistent WS connections, different scaling), mail (long-lived IMAP connections, crashes isolated), collab (CRDT WS, CPU profile). Everything else shares one process in `core` (split later by moving a module to a new host — the kernel makes this config).
 
@@ -156,7 +156,7 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 
 ### 4.9 Self-host (what everyone installs)
 
-`KernALO/kern`: `install.sh` (generates `.env` secrets, domain, pulls images) + `docker compose` profiles:
+`KernAIO/kern`: `install.sh` (generates `.env` secrets, domain, pulls images) + `docker compose` profiles:
 - base: `caddy, app, core, core-worker, chat, mail, collab, postgres(18, pgvector image), nats, valkey, minio`
 - `--profile calls`: livekit (+turn) · `--profile preview`: gotenberg · `--profile search`: meilisearch (v1.x) · `--profile observability`: glitchtip + otel collector
 - Caddy routes: `/` → app, `/api/chat/*`,`/ws` → chat, `/api/mail/*` → mail, `/collab` → collab, `/api/*` → core. Single domain, auto-HTTPS.
@@ -164,8 +164,8 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 
 ### 4.10 Dev workflow (solo + Claude, multi-repo)
 
-- `KernALO/kern` = dev workspace: `scripts/dev-setup.sh` clones `app core chat mail collab kernel modules docs` into `repos/` (gitignored); root `pnpm-workspace.yaml` = `repos/*`, `repos/kernel/packages/*`, `repos/modules/packages/*` → pnpm links everything; `docker compose -f dev/compose.yml` runs infra only; `turbo dev` runs services with hot reload. Each repo also builds standalone in CI using published `@kernalo/*` (`^0.x`).
-- Shared libs: Changesets + automated prerelease publish to npm (`@kernalo`) on every merge to `main` in `kernel`/`modules`; Renovate keeps consumers bumped.
+- `KernAIO/kern` = dev workspace: `scripts/dev-setup.sh` clones `app core chat mail collab kernel modules docs` into `repos/` (gitignored); root `pnpm-workspace.yaml` = `repos/*`, `repos/kernel/packages/*`, `repos/modules/packages/*` → pnpm links everything; `docker compose -f dev/compose.yml` runs infra only; `turbo dev` runs services with hot reload. Each repo also builds standalone in CI using published `@kernaio/*` (`^0.x`).
+- Shared libs: Changesets + automated prerelease publish to npm (`@kernaio`) on every merge to `main` in `kernel`/`modules`; Renovate keeps consumers bumped.
 - Tooling everywhere: Node 24, pnpm 10, Turborepo, TypeScript strict, Biome, Vitest, Playwright (app), Testcontainers (core), Conventional Commits, GitHub Actions (lint/test/build/image), Dependabot/Renovate.
 
 ---
@@ -173,8 +173,8 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 ## 5. Roadmap (8 weeks + 2 buffer) — milestones are demoable
 
 **Phase 0 (days 1–3) — Org & skeleton** ← immediate next steps on approval
-1. Verified: `gh` is logged in as `mirzaaghazadeh` with `admin:org`; org `KernALO` exists; `KernALO/app` already exists (private, empty). Create the remaining repos (`kern, core, chat, mail, collab, kernel, modules, docs`) via `gh repo create KernALO/<name> --private` (private while building; flip all to public at v1.0 or whenever the owner says), each with AGPL-3.0 `LICENSE`, README, `CLA.md`, `.github/` (issue/PR templates, CI), `main` branch protection. Push the initial skeleton to `KernALO/app`. Claim npm org `kernalo` (owner does this on npmjs.com; `@kernalo/*` currently unpublished).
-2. `kernel`: `@kernalo/kernel` (defineModule, registry, event bus w/ in-proc+NATS, authz, jobs, settings, provider interfaces), `@kernalo/contracts`, `@kernalo/ui` (tokens, primitives), `@kernalo/sdk`; Changesets + publish workflow.
+1. Verified: `gh` is logged in as `mirzaaghazadeh` with `admin:org`; org `KernAIO` exists; `KernAIO/app` already exists (private, empty). Create the remaining repos (`kern, core, chat, mail, collab, kernel, modules, docs`) via `gh repo create KernAIO/<name> --private` (private while building; flip all to public at v1.0 or whenever the owner says), each with AGPL-3.0 `LICENSE`, README, `CLA.md`, `.github/` (issue/PR templates, CI), `main` branch protection. Push the initial skeleton to `KernAIO/app`. Claim npm org `kernaio` (owner does this on npmjs.com; `@kernaio/*` currently unpublished).
+2. `kernel`: `@kernaio/kernel` (defineModule, registry, event bus w/ in-proc+NATS, authz, jobs, settings, provider interfaces), `@kernaio/contracts`, `@kernaio/ui` (tokens, primitives), `@kernaio/sdk`; Changesets + publish workflow.
 3. `core`: Fastify + oRPC + Drizzle + Better Auth; migrations runner (per-module schemas); users/workspaces/memberships/invites/roles/permissions; OpenAPI at `/api/docs`; worker entrypoint.
 4. `app`: SvelteKit shell, auth flows, workspace switcher, cmd-K, i18n+RTL, PWA manifest/SW, theme; module client loader.
 5. `kern`: dev workspace scripts, infra compose, self-host compose + Caddy + install.sh; CI templates for all repos.
@@ -201,7 +201,7 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 
 - Every repo: `pnpm lint && pnpm typecheck && pnpm test` in CI; `core` integration tests with Testcontainers (Postgres/NATS/MinIO), authz matrix tests (role × permission × scope), RLS leak tests (query as ws A, expect zero rows of ws B).
 - `app`: Playwright e2e per module (create workspace → invite → create issue → move on board → chat mention → notification appears in other workspace's inbox → email sent via Mailpit); Lighthouse PWA ≥ 90; RTL screenshot tests.
-- Self-host: `docker compose up` on a clean VM from `KernALO/kern` → onboarding wizard → all modules smoke-tested; upgrade path `v1.0.0 → v1.0.1` runs migrations; backup/restore script tested.
+- Self-host: `docker compose up` on a clean VM from `KernAIO/kern` → onboarding wizard → all modules smoke-tested; upgrade path `v1.0.0 → v1.0.1` runs migrations; backup/restore script tested.
 - Load: k6 on chat WS (5k connections/instance) & tracker list queries (<150 ms p95 at 100k issues/workspace).
 
 ---
@@ -210,6 +210,6 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 
 - Scope vs time: tracker + chat + mail inbox are each multi-week products; the plan sequences them so that at any checkpoint there's a coherent, releasable subset. If week 8 slips, release with clearly flagged "preview" badges on the least mature modules rather than cutting them.
 - Multi-repo friction: mitigated by umbrella workspace + automated prereleases; rule: **change contracts first, publish, then consumers** (Claude will follow this order).
-- npm scope `@kernalo` and GHCR namespace must be claimed early (Phase 0).
+- npm scope `@kernaio` and GHCR namespace must be claimed early (Phase 0).
 - iOS push limits (install required) — handled with declarative push + email fallback.
 - Licensing of deps: all chosen libs are MIT/Apache/BSD (Valkey BSD, NATS Apache, LiveKit Apache, Hocuspocus MIT, Better Auth MIT, Drizzle Apache). EmailEngine (commercial) deliberately avoided → imapflow directly.

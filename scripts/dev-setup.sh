@@ -2,7 +2,7 @@
 # Clones (or updates) every Kern repository into ./repos and installs dependencies.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ORG="${KERN_ORG:-KernALO}"
+ORG="${KERN_ORG:-KernAIO}"
 REPOS=(app core chat mail collab kernel modules docs)
 mkdir -p repos
 for r in "${REPOS[@]}"; do

@@ -37,7 +37,7 @@ services:
     depends_on: [app, core]
 
   app:
-    image: ghcr.io/kernalo/app:${KERN_VERSION}
+    image: ghcr.io/kernaio/app:${KERN_VERSION}
     restart: unless-stopped
     environment:
       <<: *kern-env
@@ -49,33 +49,33 @@ services:
     depends_on: [core]
 
   core:
-    image: ghcr.io/kernalo/core:${KERN_VERSION}
+    image: ghcr.io/kernaio/core:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL}, KERN_ADMIN_PASSWORD: ${KERN_ADMIN_PASSWORD} }
     depends_on: { postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"], interval: 15s, timeout: 5s, retries: 10 }
 
   core-worker:
-    image: ghcr.io/kernalo/core:${KERN_VERSION}
+    image: ghcr.io/kernaio/core:${KERN_VERSION}
     command: ["node", "dist/worker.js"]
     restart: unless-stopped
     environment: *kern-env
     depends_on: { core: { condition: service_healthy } }
 
   chat:
-    image: ghcr.io/kernalo/chat:${KERN_VERSION}
+    image: ghcr.io/kernaio/chat:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4100 }
     depends_on: { core: { condition: service_healthy } }
 
   mail:
-    image: ghcr.io/kernalo/mail:${KERN_VERSION}
+    image: ghcr.io/kernaio/mail:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4200 }
     depends_on: { core: { condition: service_healthy } }
 
   collab:
-    image: ghcr.io/kernalo/collab:${KERN_VERSION}
+    image: ghcr.io/kernaio/collab:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4300 }
     depends_on: { core: { condition: service_healthy } }
