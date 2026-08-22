@@ -28,3 +28,36 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.
 - UI follows `app/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
 - All user-facing strings go through i18n (Paraglide) — no hardcoded English in components.
+
+## Keeping this file current
+This file is how the next person — or the next agent — avoids repeating what we already worked out.
+When you learn something durable, add it here **in the same commit as the change that taught you**:
+- a trap that cost you time (a silent failure, a misleading error, a tool that lies about success)
+- a convention you had to infer from reading several files
+- a decision and the reason behind it, especially where the obvious choice is wrong
+Keep it specific and short. Delete anything that stops being true — a stale note is worse than none.
+
+---
+
+# This repository: kern (umbrella)
+
+The project's face and the local development workspace. It holds the self-host distribution
+(`selfhost/`), the docs and ADRs (`docs/`), and the scripts that clone every other repository into
+`repos/` and link them with pnpm.
+
+```bash
+pnpm setup     # clone every repo into ./repos and install
+pnpm infra     # Postgres 18, NATS, Valkey, MinIO, Mailpit
+pnpm dev       # every service with hot reload
+```
+
+**Things worth knowing**
+- `repos/` is gitignored: each subdirectory is its own git repository with its own remote.
+- Dependencies are installed at this root, which is why every repo uses
+  `scripts/pnpm-install-locked.sh` — several agents or terminals installing at once will corrupt the
+  store otherwise.
+- The dev Postgres container listens on `${KERN_PG_PORT:-5432}`. On a machine that already runs
+  Postgres on 5432 (Homebrew, for instance), set `KERN_PG_PORT=5433` so the container stops shadowing
+  it — and point `DATABASE_URL` at whichever one you actually mean.
+- `selfhost/` is what users run. Changing a service's port, image name or env contract means changing
+  `docker-compose.yml`, `Caddyfile` and `.env.example` here too.
