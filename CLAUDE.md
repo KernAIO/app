@@ -24,6 +24,19 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400.
 - Dev DB on this machine: Homebrew Postgres 18 at `localhost:5432` (`kern`/`kern`); the compose Postgres listens on `${KERN_PG_PORT:-5432}` (5433 here).
 
+## CI
+Every service repository's CI runs the real suites, so the workflow starts the infrastructure they
+need as service containers: Postgres (`pgvector/pgvector:pg18`) everywhere, Valkey for `chat`,
+Mailpit for `mail`. Things learned the hard way:
+- Address a service container as **127.0.0.1**, never `localhost` — a runner resolves `localhost` to
+  `::1` first, where the published port is not listening, and `fetch` does not retry over IPv4.
+- Do not set `registry-url` on `actions/setup-node` in an install job. It writes an `.npmrc` with a
+  placeholder token, and npm answers a bad token with **404**, so public packages appear to vanish.
+- A repository is built **standalone** in CI. `workspace:*` only resolves inside the umbrella
+  workspace; depend on the published version instead.
+- Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
+  Fail when `process.env.CI` is set.
+
 ## Quality bar
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.
 - UI follows `app/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
