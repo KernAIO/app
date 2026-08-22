@@ -69,7 +69,7 @@ optimistically (a switch), it must snap back when the user cancels.
 ## 7. Design fidelity
 
 `repos/app/DESIGN.md` is the authority: exact tokens, sizes, and per-view anatomy. Use tokens that
-exist (`repos/kernel/packages/ui/styles/tokens.css`) — an invented name resolves to nothing and fails
+exist (`repos/kernel/packages/ui/src/lib/styles/tokens.css`) — an invented name resolves to nothing and fails
 silently. Check a component's real props before using it; several differ from the obvious guess.
 
 ## 8. Accessibility
