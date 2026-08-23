@@ -75,8 +75,10 @@ the hard way and worth re-reading before you edit a workflow:
   when `process.env.CI` is set.
 
 Then the second workflow, by repo kind:
-- service → `docker.yml`, publishing `ghcr.io/kernaio/<name>` (copy it verbatim; the metadata tags and
-  the `NODE_AUTH_TOKEN` build secret are already right).
+- service → `docker.yml`, publishing `ghcr.io/kernaio/<name>` (copy it verbatim; the metadata tags,
+  the `NODE_AUTH_TOKEN` build secret and the `KERN_VERSION` build arg are already right — that build
+  arg is what makes the image report the release it was tagged as, so a copy that drops it produces a
+  service claiming to be `0.0.0-dev` in production).
 - package workspace → `publish.yml` plus `.changeset/`.
 - docs → `pages.yml`.
 

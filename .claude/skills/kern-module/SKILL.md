@@ -45,6 +45,13 @@ Then fix the things a copy gets wrong — each of these has bitten:
   tarball. `./client` exports point at `./src/client/index.ts`, not at `dist`. See `packages/tracker`.
 - `MODULE_ID` in `src/contract.ts`, the schema name `mod_<id>`, and `schemaFilter` in
   `drizzle.config.ts` must all agree.
+- The manifest's `version` is `packageVersion(import.meta.url)`, never a string literal. Nothing
+  bumps a literal when changesets releases the package: chat shipped as 0.2.0 and told every admin
+  it was 0.1.0, and that literal is what `workspace_modules.installed_version` recorded.
+  `pnpm build && pnpm check:versions` fails the build if the two ever disagree again.
+- Set `minKernel` only if the module genuinely needs a platform newer than the one it ships with.
+  Modules are released together with everything else, so it is for custom builds — and the kernel
+  refuses to boot rather than failing later at some unrelated call site.
 
 ## 3. Contract first
 
@@ -137,6 +144,7 @@ A new module is reachable only when **all** of these are true. Check them off ex
 - [ ] `mod_<id>` schema, RLS migration, tenant isolation test
 - [ ] imported into a host service's module list
 - [ ] registered in `app/src/lib/modules/registry.ts`
+- [ ] widgets declared, or a sentence saying why the module has none (`kern-widget`)
 - [ ] messages in en, fa, ar, de
 - [ ] changeset written, consumers bumped to a published version
 - [ ] selfhost + docs updated if the surface changed

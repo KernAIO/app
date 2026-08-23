@@ -72,12 +72,92 @@ optimistically (a switch), it must snap back when the user cancels.
 exist (`repos/kernel/packages/ui/src/lib/styles/tokens.css`) — an invented name resolves to nothing and fails
 silently. Check a component's real props before using it; several differ from the obvious guess.
 
+**A wrong token name is invisible, so check it mechanically.** `var(--kern-radius-sm)` does not
+exist; the token is `--kern-r-sm`. Thirty uses of it had shipped across seventeen tracker files, and
+every one of those corners rendered square in an interface where nothing else is. Nothing failed —
+not the build, not the types, not the tests. After touching CSS, run:
+
+```bash
+# every token a file references, minus every token that is defined — the difference is your bugs
+comm -23 \
+  <(grep -rhoE 'var\(--kern-[a-z0-9-]+' repos/app/src repos/kernel/packages/ui/src | sed 's/var(//' | sort -u) \
+  <(grep -hoE '^\s+--kern-[a-z0-9-]+' repos/kernel/packages/ui/src/lib/styles/*.css | tr -d ' ' | sed 's/:$//' | sort -u)
+```
+
+A fallback (`var(--kern-radius-md, 12px)`) hides the same mistake behind a value that looks
+deliberate. Prefer no fallback, so a wrong name shows up as a missing style instead of a lie —
+`--kern-gutter`, `--kern-shadow-menu` and `--kern-ink` all hid this way, and `--kern-ink` had no
+fallback at all, so three hover states simply never changed colour.
+
+The command also lists custom properties a component defines on itself (`--kern-lane-dir` in
+`BoardView`). Those are fine — check each hit before changing it.
+
 ## 8. Accessibility
 
 Every control has an accessible name (`ariaLabel` on a checkbox with no visible label). Dialogs trap
 focus and close on Escape. The active nav item carries `aria-current`. Icon-only buttons carry a label.
 
-## 9. Verify by running it
+## 9. Affordance and geometry
+
+Small things that read as sloppiness, in the order they were found in review.
+
+**Anything clickable shows a pointer.** `tokens.css` already sets `button { cursor: pointer }`, so
+the only way to get this wrong is to override it — the window tab strip carried `cursor: default`
+on the tab, its close button and the `+`, and the whole strip felt inert. Only a genuinely
+non-interactive row keeps the arrow (`Table`'s `.ktr` does, and `.ktr.clickable` opts back in).
+Sweep the running page:
+
+```js
+[...document.querySelectorAll('button:not(:disabled), [role=button], a[href]')]
+  .filter(e => e.offsetParent && getComputedStyle(e).cursor === 'default')
+```
+
+**Cards in a grid of choices are all one size.** A grid stretches the *cell*, not the button inside
+it, so one two-line description makes the card beside it visibly short. Give the grid
+`grid-auto-rows: 1fr` and let the cell stretch its child (`> li { display: grid }`).
+
+**A badge that overhangs its button needs room in the ancestor that clips.** A clip box is the
+padding box, so `overflow: hidden` on a list slices any badge positioned outside its item — most
+visibly in RTL, where `inset-inline-end` is the left edge. Pad the clipping ancestor by the
+overhang and cancel it with an equal negative margin: the margin box is unchanged, so nothing
+moves, and the badge survives. Check both directions, never just the one on your screen.
+
+## 10. Rich text is a component, not a textarea
+
+Anywhere a user writes prose that is stored as a document — descriptions, comments, documents —
+use `RichTextEditor` from `@kernhq/ui/editor`. Never a bare `<textarea>` with a text-to-document
+converter: it silently forbids everything the renderer can draw.
+
+Two rules keep it honest:
+
+- **The editor's schema is the renderer's schema.** Configure StarterKit down to exactly the nodes
+  and marks the read side draws. A node the editor can produce and the renderer cannot draw
+  vanishes on save, and nobody notices until a user complains.
+- **The writing surface wears `.kern-prose`, the same class the read view wears.** Nothing moves
+  when you press Save, and there is one stylesheet, not two that drift.
+
+Beyond that, the things that separate this from a cheap editor, all of which have to be checked by
+using it:
+
+- Toolbar controls cancel `mousedown`; they do not handle `click`. A `contenteditable` loses its
+  selection the moment focus moves, so a `click` toolbar bolds a collapsed cursor.
+- A link is edited in an inline field with Apply and Remove, never `window.prompt`.
+- The `@` menu flips above the caret when there is no room below — a composer sits at the bottom of
+  a panel, which is exactly where "always below" falls off-screen.
+- A mention is a node with the user's id, not the characters `@Ada`.
+- **Snapshot the document before it leaves the component.** It is a Svelte state proxy, and a proxy
+  cannot be `structuredClone`d — which is what the API layer does. Pass `$state.snapshot(doc)`, or
+  the save throws "could not be cloned" and drops the edit.
+- Never read `editor.can().…` from a template expression. `can()` runs a dry-run transaction, which
+  fires `onTransaction`; if that bumps reactive state, Svelte throws `state_unsafe_mutation`.
+
+## 11. A dashboard widget has its own bar
+
+A card on the workspace home is judged beside every other module's. Read the `kern-widget` skill
+before adding one — what it must not claim, why one configurable widget beats six fixed ones, and
+why the keyboard route is the specification rather than the afterthought.
+
+## 12. Verify by running it
 
 Type-checking is not verification. Run `pnpm dev:mock`, open the screen, exercise each action, and
 look at it in both themes — with screenshots if Chrome tooling is available. Then run

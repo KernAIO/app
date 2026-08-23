@@ -54,12 +54,27 @@ Every mutation does three things, not one:
 
 Skipping (3) is the usual cause of "I had to refresh to see it".
 
-## 5. Migrations that survive a second run
+## 5. Migrations that survive a second run — and the image before them
+
+- **A migration must leave the database readable by the previous image.** Add nullable columns and
+  new tables; never drop, rename, narrow a type or add a `NOT NULL` without a default in the same
+  release. Backfill in a job or a later release, not in the migration that adds the column.
+  Destructive changes land one release later, after everyone has taken the release that stopped
+  using the thing.
+
+  This is not tidiness. Rolling an image back only works if the old code can read the new schema,
+  and on cloud a rolling deploy runs both images against one schema deliberately. A release that
+  cannot follow the rule is marked `schemaChanges: breaking` in the release feed, and rolling it
+  back then costs a database restore. See `docs/adr/0002-platform-versioning-and-updates.md`.
 
 - `CREATE SCHEMA IF NOT EXISTS` — the kernel creates the schema before migrating, so the bare form
-  fails on boot.
+  fails on boot. Note that `if not exists` is **not atomic** in Postgres: the kernel holds an
+  advisory lock across schema creation and migration because four services booting together raced
+  it into a unique violation on `pg_namespace`.
 - Generated SQL never includes RLS. Add it in a hand-written migration alongside.
 - Migrations are append-only once pushed. Fix forward.
+- A deployment that is not a single Compose host migrates **once, before any new image serves**:
+  `node dist/migrate.js` (and `--check` first, which reports what is pending and applies nothing).
 
 ## 6. Fail honestly
 

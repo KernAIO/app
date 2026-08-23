@@ -17,7 +17,7 @@ readings of the goal lead to materially different work.
 Plan documents describe intent. They go stale the moment something ships. Start from the ground:
 
 ```bash
-bash scripts/status.sh                                  # what is dirty, unpushed, mid-flight
+pnpm status                                             # every checkout: dirty, unpushed, stashed, missing
 for r in app core chat mail collab kernel modules docs; do
   printf '%-8s ' "$r"; gh run list -R "KernAIO/$r" --limit 1 --json conclusion,workflowName \
     --jq '.[] | "\(.workflowName): \(.conclusion)"'
