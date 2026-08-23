@@ -55,6 +55,12 @@ noun, and add it there when you settle one.
 If you cannot write a language, say so in your report. Do not leave it silently English — the check
 will not fail on it, and nobody will notice until a reader does.
 
+**Do not ask permission per locale, per area or per batch.** Translation is long, repetitive work and
+stopping to check in turns one task into forty. Fill a language end to end, run the check, and report
+once at the end: which locales you wrote, which you could not, and what you verified. Ask only when a
+decision is genuinely the maintainer's — a term that changes what the product calls something, or a
+locale nobody on the team reads well enough to review.
+
 ## 3. Counts are variant messages, never `{count}` in a string
 
 A flat string is wrong in every language that inflects. English said "1 issues" for a year.
