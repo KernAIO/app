@@ -5,9 +5,12 @@ set -euo pipefail
 DIR="${KERN_DIR:-$HOME/kern}"
 RAW="https://raw.githubusercontent.com/KernAIO/kern/main/selfhost"
 mkdir -p "$DIR/postgres-init" && cd "$DIR"
-for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql; do
+mkdir -p "$DIR/systemd"
+for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql \
+         kern-upgrade.sh kern-rollback.sh systemd/kern-auto-update.service systemd/kern-auto-update.timer; do
   [ -f "$f" ] || curl -fsSL "$RAW/$f" -o "$f"
 done
+chmod +x kern-upgrade.sh kern-rollback.sh
 command -v docker >/dev/null || { echo "Docker is required: https://docs.docker.com/get-docker/"; exit 1; }
 gen() { openssl rand -hex 32; }
 if [ ! -f .env ]; then
@@ -36,8 +39,29 @@ fi
 PROFILES=""
 read -rp "Enable video calls (LiveKit)? [y/N] " yn; [[ "$yn" =~ ^[Yy] ]] && PROFILES="$PROFILES --profile calls"
 read -rp "Enable office/PDF previews (Gotenberg)? [y/N] " yn; [[ "$yn" =~ ^[Yy] ]] && PROFILES="$PROFILES --profile preview"
+# The timer only ever asks the instance whether it may upgrade; nothing happens until an admin
+# turns automatic updates on in Admin -> Updates. Installing it now saves finding out later that
+# the switch in the interface had nothing behind it.
+if command -v systemctl >/dev/null && [ -d "$HOME/.config" ]; then
+  read -rp "Install the update timer, so Kern can update itself if you switch that on later? [Y/n] " yn
+  if [[ ! "$yn" =~ ^[Nn] ]]; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cp systemd/kern-auto-update.service systemd/kern-auto-update.timer "$HOME/.config/systemd/user/"
+    systemctl --user daemon-reload
+    systemctl --user enable --now kern-auto-update.timer
+    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+    echo "✔ update timer installed (systemctl --user list-timers kern-auto-update)"
+  fi
+else
+  echo "ℹ No systemd here. For automatic updates, run the updater service instead:"
+  echo "    docker compose --profile autoupdate up -d"
+  echo "  It needs the Docker socket, which gives it control of this host — read the docs first."
+fi
+
 docker compose $PROFILES pull
 docker compose $PROFILES up -d
 echo
 echo "🎉 Kern is starting. Open: $(grep ^KERN_BASE_URL .env | cut -d= -f2)"
-echo "   Logs: docker compose logs -f    Upgrade: docker compose pull && docker compose up -d"
+echo "   Logs:    docker compose logs -f"
+echo "   Upgrade: ./kern-upgrade.sh          (snapshots first, then applies)"
+echo "   Undo:    ./kern-rollback.sh"

@@ -26,13 +26,20 @@ x-kern-env: &kern-env
   LIVEKIT_URL: ws://livekit:7880
   LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
   LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+  # Billing. Empty on a normal install: the module ships in the image and does nothing until an
+  # instance both defines plans and sets a Stripe key, so a self-hosted Kern has no limits at all.
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  # Slug of the plan a brand-new workspace starts on. Leave empty and new workspaces get no
+  # subscription row, which resolves to unlimited.
+  KERN_DEFAULT_PLAN_SLUG: ${KERN_DEFAULT_PLAN_SLUG:-}
 
 services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports: ["80:80", "443:443", "443:443/udp"]
-    environment: { KERN_DOMAIN: ${KERN_DOMAIN}, ACME_EMAIL: ${ACME_EMAIL} }
+    environment: { KERN_DOMAIN: "${KERN_DOMAIN}", ACME_EMAIL: "${ACME_EMAIL}" }
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
     depends_on: [app, core]
 
@@ -51,7 +58,7 @@ services:
   core:
     image: ghcr.io/kernaio/core:${KERN_VERSION}
     restart: unless-stopped
-    environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL}, KERN_ADMIN_PASSWORD: ${KERN_ADMIN_PASSWORD} }
+    environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: "${KERN_ADMIN_EMAIL}", KERN_ADMIN_PASSWORD: "${KERN_ADMIN_PASSWORD}" }
     depends_on: { postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"], interval: 15s, timeout: 5s, retries: 10 }
 
@@ -80,10 +87,35 @@ services:
     environment: { <<: *kern-env, PORT: 4300 }
     depends_on: { core: { condition: service_healthy } }
 
+  # Opt-in: `docker compose --profile autoupdate up -d`.
+  #
+  # It exists so an admin can have Kern update itself on a host with no systemd timer. Mounting the
+  # Docker socket gives this container control of the whole host — a compromise of Kern becomes a
+  # compromise of everything Docker runs here — so it is off unless you ask for it, and the timer in
+  # `systemd/` is the better answer when you have systemd.
+  #
+  # Its image tag is deliberately not ${KERN_VERSION}: an upgrade must not recreate the container
+  # that is running the upgrade.
+  updater:
+    image: docker:27-cli
+    profiles: [autoupdate]
+    restart: unless-stopped
+    environment: { TZ: "${TZ:-UTC}" }
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/kern
+    working_dir: /kern
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        apk add --no-cache bash curl python3 docker-cli-compose >/dev/null &&
+        while true; do bash ./kern-upgrade.sh --auto || true; sleep 3600; done
+
   postgres:
     image: pgvector/pgvector:pg18
     restart: unless-stopped
-    environment: { POSTGRES_USER: ${POSTGRES_USER}, POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}, POSTGRES_DB: ${POSTGRES_DB} }
+    environment: { POSTGRES_USER: "${POSTGRES_USER}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: "${POSTGRES_DB}" }
     volumes: ["pgdata:/var/lib/postgresql", "./postgres-init:/docker-entrypoint-initdb.d:ro"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"], interval: 5s, timeout: 5s, retries: 20 }
 
@@ -103,7 +135,7 @@ services:
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data
-    environment: { MINIO_ROOT_USER: ${S3_ACCESS_KEY}, MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY} }
+    environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
     volumes: ["miniodata:/data"]
   minio-init:
     image: minio/mc:latest

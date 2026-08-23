@@ -1,0 +1,14 @@
+[Unit]
+# Runs kern-upgrade.sh --auto, which asks the instance whether it may upgrade and does nothing
+# unless the answer is yes. The policy, the window and the settling period are set by an admin in
+# Admin -> Updates, so this unit needs no configuration of its own.
+Description=Kern automatic update
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kern
+ExecStart=%h/kern/kern-upgrade.sh --auto
+# An upgrade takes minutes; a stuck one must not hold the timer for ever.
+TimeoutStartSec=45min

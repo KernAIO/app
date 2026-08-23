@@ -1,0 +1,85 @@
+name: Self-host distribution
+# `selfhost/` is the only code in this repository that runs on somebody else's machine, and none of
+# it is covered by a repo's test suite. The compose file once shipped not parsing at all — a bare
+# ${VAR} inside a YAML flow mapping — so `install.sh` failed for every self-hoster while CI stayed
+# green, because nothing parsed it.
+on:
+  push: { branches: [main], paths: ['selfhost/**', '.github/workflows/selfhost.yml'] }
+  pull_request: { paths: ['selfhost/**', '.github/workflows/selfhost.yml'] }
+
+permissions: { contents: read }
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The compose file parses and resolves
+        working-directory: selfhost
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example config >/dev/null
+          echo "✔ base profile"
+          docker compose --env-file .env.example --profile calls --profile preview --profile autoupdate config >/dev/null
+          echo "✔ every profile"
+
+      - name: The updater is not pinned to KERN_VERSION
+        working-directory: selfhost
+        # An upgrade must not recreate the container that is running the upgrade. Compose only
+        # recreates a service whose config changed, so the updater's image tag has to stay put
+        # while every other one moves.
+        run: |
+          set -euo pipefail
+          image=$(docker compose --env-file .env.example --profile autoupdate config \
+            | python3 -c 'import sys,yaml; print(yaml.safe_load(sys.stdin)["services"]["updater"]["image"])')
+          echo "updater image: $image"
+          case "$image" in
+            *"$(grep -E '^KERN_VERSION=' .env.example | cut -d= -f2)"*)
+              echo "::error::the updater follows KERN_VERSION, so an upgrade would kill it mid-run"
+              exit 1 ;;
+          esac
+
+      - name: The Coolify compose file parses and resolves
+        working-directory: selfhost/coolify
+        # Its variables come from Coolify, not from a .env, so `config` warns about every one of
+        # them being unset. That is the expected state here; only a parse failure matters.
+        run: |
+          set -euo pipefail
+          docker compose config >/dev/null
+          echo "✔ selfhost/coolify/docker-compose.yml"
+
+      - name: The Coolify stack is the same stack
+        run: python3 scripts/check-selfhost-drift.py
+
+      - name: The Caddy config the Coolify stack writes is valid
+        # It is a heredoc inside a container command rather than a file, so nothing else would ever
+        # read it. Adapting it in the real image is the only way to find out that it is wrong.
+        run: |
+          set -euo pipefail
+          python3 scripts/check-selfhost-drift.py --emit-caddyfile /tmp/Caddyfile
+          docker run --rm -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: The scripts parse
+        working-directory: selfhost
+        run: |
+          set -euo pipefail
+          for f in install.sh kern-upgrade.sh kern-rollback.sh; do bash -n "$f"; echo "✔ $f"; done
+
+      - name: shellcheck
+        working-directory: selfhost
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # SC2086 (word splitting) is deliberate for the compose profile list
+          shellcheck --severity=warning --exclude=SC2086 install.sh kern-upgrade.sh kern-rollback.sh
+
+      - name: Every variable the compose file reads is in .env.example
+        working-directory: selfhost
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in $(grep -ohE '\$\{[A-Z_][A-Z0-9_]*' docker-compose.yml | sed 's/^\${//' | sort -u); do
+            grep -qE "^${var}=" .env.example || { echo "::error::${var} is not in .env.example"; missing=1; }
+          done
+          [ "$missing" -eq 0 ] && echo "✔ every variable documented"

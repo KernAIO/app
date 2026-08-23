@@ -1,0 +1,13 @@
+[Unit]
+Description=Check hourly whether Kern should update itself
+
+[Timer]
+# Hourly, because the instance owns the window: a 03:00-05:00 window is only hit if something asks
+# often enough to fall inside it. The instance declines the other twenty-two times, cheaply.
+OnCalendar=hourly
+# Every instance in the world would otherwise ask GitHub for the release feed on the hour.
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

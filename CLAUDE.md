@@ -23,7 +23,23 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Install dependencies ONLY via `kern/scripts/pnpm-install-locked.sh` (serialises pnpm at the umbrella root).
 - Node 24 (`nvm use 24`), pnpm 10, TypeScript ~5.9, ESM/NodeNext, Biome for lint+format (run `pnpm exec biome check --write <paths>` before committing), Vitest.
 - Contracts first: changes to `@kernhq/contracts` / module contracts land (and build) before their consumers.
+- **One version for the platform.** Every image and every module in an instance carries the same
+  `KERN_VERSION`, baked in at build time; npm versions are a packaging unit, not something a customer
+  installs. A module's manifest version comes from `packageVersion(import.meta.url)`, never a literal
+  — the literals drifted for months and every admin was shown the wrong version. See
+  `docs/adr/0002-platform-versioning-and-updates.md`.
+- **Every migration must leave the database readable by the image before it.** Add nullable columns
+  and new tables; drop and rename one release later. This is what makes rolling an image back work
+  without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
+  purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
+- **An entitlement key without an enforcement site is a lie.** `kernel.entitlements` declares what a
+  plan may limit — seats, storage, modules, SSO, audit retention, API rate — and each key has exactly
+  one place in core that checks it. Plan *values* are data an admin edits; the key set is not. Adding
+  a key means adding its enforcement in the same commit, or the pricing page starts promising things
+  again. When nothing answers `billing.entitlements.get`, every workspace is unlimited: that is what
+  every self-hosted instance does on every request, so it is the default path and must not throw.
+  See `docs/adr/0003-billing-entitlements-and-cloud.md`.
 - Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
   allocation, the next free number, and the map of every repository are generated —
   `node .claude/skills/kern-repos/scripts/sync.mjs`, then read the `kern-repos` skill.
@@ -78,6 +94,13 @@ pnpm dev       # every service with hot reload
 
 **Things worth knowing**
 - `repos/` is gitignored: each subdirectory is its own git repository with its own remote.
+- **`pnpm status` is the only honest answer to "is everything committed?"** Ten repositories means ten
+  answers, and `website` is checked out *beside* the umbrella rather than inside `repos/`, so a loop
+  over `repos/*` misses it — silently, which is the worst way to miss something. The script finds
+  every checkout, lists every path (never a truncated `head`), and reports unpushed commits, stashes,
+  a detached HEAD and any repository the organisation has that is not cloned here. It **exits 1** when
+  anything is unpushed, so it can gate rather than only inform: `pnpm check:clean` is the same check
+  without the detail. Run it before you tag anything.
 - Dependencies are installed at this root, which is why every repo uses
   `scripts/pnpm-install-locked.sh` — several agents or terminals installing at once will corrupt the
   store otherwise.
@@ -85,7 +108,37 @@ pnpm dev       # every service with hot reload
   Postgres on 5432 (Homebrew, for instance), set `KERN_PG_PORT=5433` so the container stops shadowing
   it — and point `DATABASE_URL` at whichever one you actually mean.
 - `selfhost/` is what users run. Changing a service's port, image name or env contract means changing
-  `docker-compose.yml`, `Caddyfile` and `.env.example` here too.
+  `docker-compose.yml`, `Caddyfile`, `.env.example` and `coolify/docker-compose.yml` here too — and
+  `install.sh`'s file list, which is what an existing instance never re-downloads.
+  `scripts/check-selfhost-drift.py` is what notices when the Coolify copy is left behind; CI runs it.
+- **The images are `amd64` only.** `docker.yml` in each service repo has no `platforms:`, so
+  `build-push-action` builds for the runner. Every requirement we publish says x86-64 because of
+  that one omission — adding `platforms: linux/amd64,linux/arm64` (and QEMU) is what changes it.
+- **The memory figures in the docs and on the website are measured, not estimated.** Idle RSS of the
+  real containers, plus `node dist/main.js` for `core` run against them. Re-measure before changing
+  the numbers rather than adjusting them by feel; `core` is the largest Kern service, so it is the
+  one worth measuring.
+- **`selfhost/coolify/` mounts nothing.** A Compose file pasted into Coolify has no files beside it,
+  so the Caddy config is a heredoc inside the container's command and the Postgres init script is
+  gone (core's first migration creates the extensions anyway). Keep the heredoc free of `$` —
+  Compose interpolates the command string before the shell ever sees it.
+- **Caddy behind another proxy rewrites `X-Forwarded-Proto` to `http` and replaces the client IP**
+  unless the proxy in front is trusted. On Coolify that turns every request into one the services
+  believe arrived unencrypted. `servers { trusted_proxies static private_ranges }` in the global
+  block is what preserves them; the host install does not need it, because there it is the edge.
+- **Run `docker compose config` after editing `docker-compose.yml`.** A bare `${VAR}` inside a YAML
+  *flow* mapping (`environment: { A: ${A} }`) opens a nested mapping and the whole document stops
+  parsing — the file shipped that way and `docker compose config` failed on it, which no test
+  covered because nothing parsed it. Quote every interpolation inside `{ }`.
+- **`pnpm.overrides` pins `@kernhq/contracts|kernel|sdk|ui` to `workspace:*`.** Without it a repo
+  whose dependency range excludes the local version (app wanted `module-tracker@^0.3.0`, the
+  workspace had 0.2.1) installs the published module, which drags a published `@kernhq/contracts`
+  into the tree. Two copies of the contracts then coexist, and `svelte-check` resolves the stale one
+  while plain `tsc` resolves the linked one — so the app reports errors for procedures that exist,
+  in files nobody touched. Plain `tsc` passing is not evidence here; `pnpm typecheck` is.
+- Release feed: `node scripts/release-feed.mjs --keygen` makes the ed25519 pair. The public half goes
+  in core's `updates` service, the private half in the `KERN_FEED_PRIVATE_KEY` org secret. Until both
+  exist, instances report "no signing key is configured" rather than claiming to be current.
 - **A workspace package can silently resolve to a registry copy, and then local edits do nothing.**
   `link-workspace-packages=true` links a package the first time the workspace version satisfies the
   range; pnpm does not re-evaluate a resolution that still satisfies, so once the lockfile records
@@ -100,3 +153,9 @@ pnpm dev       # every service with hot reload
   at all if it is not. Either way the consumer's CI installs from the registry, so the change has to
   publish before the consumer's commit can go green: module changeset and push, wait for the version
   to appear on npm, then bump the app.
+- **`tsx watch` processes pile up, and the oldest one owns the port.** Seven `core` watchers were
+  running at once from earlier sessions; the first to bind :4000 keeps it, and every later one
+  reloads your edits into a process nobody can reach. The symptom is a service that ignores a change
+  it has definitely seen — `curl localhost:4000/api/core/openapi.json` shows the old surface while
+  the log shows a reload. Check with `ps -eo pid,command | grep "tsx/dist/cli.mjs watch"` before
+  concluding a change did not take, and expect one pid per service.

@@ -1,0 +1,92 @@
+name: Release feed
+# Publishes the signed list of releases that self-hosted instances read to find out a newer Kern
+# exists, and that our own cloud rollout is triggered by. It runs after a stable release is
+# published, and it builds the feed from the images that release produced rather than from anything
+# written by hand — so what an admin is told a release changes is what the artefacts contain.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to (re)publish into the feed, without a leading v'
+        required: true
+      schema:
+        description: 'How much of the schema this release moves'
+        required: true
+        default: additive
+        type: choice
+        options: [none, additive, breaking]
+      min_previous:
+        description: 'Oldest version that may upgrade straight to this one (blank for any)'
+        required: false
+
+permissions: { contents: write, packages: read }
+concurrency:
+  group: release-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    # A prerelease is not something an instance should be offered.
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
+
+      - id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V='${{ inputs.version }}'
+          else
+            V='${{ github.event.release.tag_name }}'
+          fi
+          echo "value=${V#v}" >> "$GITHUB_OUTPUT"
+
+      # Keep the releases already in the feed: an instance several versions behind needs to see the
+      # one it is allowed to step to, not only the newest.
+      - name: Fetch the current feed
+        continue-on-error: true
+        run: |
+          curl -fsSL -o previous.json \
+            https://github.com/${{ github.repository }}/releases/latest/download/releases.json
+
+      - name: Build and sign
+        env:
+          KERN_FEED_PRIVATE_KEY: ${{ secrets.KERN_FEED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KERN_FEED_PRIVATE_KEY:-}" ]; then
+            echo "::error::KERN_FEED_PRIVATE_KEY is not set, so the feed cannot be signed. Generate a pair with 'node scripts/release-feed.mjs --keygen'."
+            exit 1
+          fi
+          node scripts/release-feed.mjs \
+            --version "${{ steps.version.outputs.value }}" \
+            --out releases.json \
+            ${{ github.event_name == 'workflow_dispatch' && format('--schema {0}', inputs.schema) || '' }} \
+            ${{ github.event_name == 'workflow_dispatch' && inputs.min_previous != '' && format('--min-previous {0}', inputs.min_previous) || '' }} \
+            $([ -f previous.json ] && echo "--previous previous.json")
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.value }}"
+          gh release upload "$TAG" releases.json --clobber --repo "${{ github.repository }}"
+
+      # Our cloud tracks stable: the same feed that tells a self-hosted admin a release exists is
+      # what tells the cloud to roll it out, so the two can never describe different releases.
+      - name: Tell the cloud to roll out
+        if: vars.KERN_CLOUD_DISPATCH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_CLOUD_TOKEN }}
+        run: |
+          gh workflow run rollout.yml \
+            --repo KernAIO/cloud \
+            --field version="${{ steps.version.outputs.value }}"

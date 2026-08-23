@@ -36,6 +36,11 @@
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+		# `frame-ancestors` is ignored in a <meta> tag, so the app cannot set it itself — SvelteKit
+		# emits the rest of the policy (it knows which scripts it emits and can nonce them).
+		# X-Frame-Options is the same rule for anything that predates CSP.
+		Content-Security-Policy "frame-ancestors 'none'"
+		X-Frame-Options DENY
 		-Server
 	}
 }
