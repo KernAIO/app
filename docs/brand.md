@@ -34,6 +34,19 @@ visibly left of the square's centre at every size. Centre the measured ink, not 
 Colours are the design-system tokens, not separate brand values: ink `#1C1A17`, paper `#FBFAF7`,
 accent `#B4661C`.
 
+## The monochrome mark
+
+`kern-mark-mono.svg` is a single path with `fill-rule="evenodd"`: the square, then the K and the
+tick wound inside it, so both are knocked out and the mark reads on any ground through
+`currentColor`.
+
+**The K in it is a unioned outline, not the glyph's own contours.** Instrument Sans draws a K as
+three overlapping shapes — the stem and the two arms, each running a little way into the others.
+Nonzero fill does not care, which is why every coloured mark is fine. Even-odd *cancels* an
+overlap, so the raw glyph left a triangular notch bitten out of the K's vertex — small enough to
+miss at favicon size and obvious the moment anyone zoomed in. Union the contours before composing
+the path.
+
 ## The lockup
 
 Cap height 84, gap 40, the wordmark's cap box centred on the mark. "Kern" is Instrument Sans

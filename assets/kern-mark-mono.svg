@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="Kern">
   <!-- Monochrome: one even-odd path, so the K and the tick are knocked out
-       of the square and the mark reads on any ground. Takes currentColor. -->
-  <path fill="currentColor" fill-rule="evenodd" d="M36.00 0.00H108.00A36.00 36.00 0 0 1 144.00 36.00V108.00A36.00 36.00 0 0 1 108.00 144.00H36.00A36.00 36.00 0 0 1 0.00 108.00V36.00A36.00 36.00 0 0 1 36.00 0.00ZM38.81 99.36V44.64H48.69V99.36ZM45.98 70.94 71.87 44.64H85.17L58.16 70.94ZM73.09 99.36 45.83 70.94H58.16L86.69 99.36ZM100.69 44.00H100.69A4.50 4.50 0 0 1 105.19 48.50V95.50A4.50 4.50 0 0 1 100.69 100.00H100.69A4.50 4.50 0 0 1 96.19 95.50V48.50A4.50 4.50 0 0 1 100.69 44.00Z"/>
+       of the square and the mark reads on any ground. Takes currentColor.
+       The K is a unioned outline here, not the glyph's three overlapping
+       contours: even-odd cancels an overlap, which notched the vertex. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M36.00 0.00H108.00A36.00 36.00 0 0 1 144.00 36.00V108.00A36.00 36.00 0 0 1 108.00 144.00H36.00A36.00 36.00 0 0 1 0.00 108.00V36.00A36.00 36.00 0 0 1 36.00 0.00ZM38.81 44.64H48.69V68.18L71.87 44.64H85.17L58.16 70.94L86.69 99.36H73.09L48.69 73.92V99.36H38.81V44.64ZM100.69 44.00H100.69A4.50 4.50 0 0 1 105.19 48.50V95.50A4.50 4.50 0 0 1 100.69 100.00H100.69A4.50 4.50 0 0 1 96.19 95.50V48.50A4.50 4.50 0 0 1 100.69 44.00Z"/>
 </svg>
