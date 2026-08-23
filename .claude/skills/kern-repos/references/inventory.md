@@ -6,11 +6,12 @@
 
 # The KernAIO repositories
 
-10 repositories, last synced 2026-08-22.
+11 repositories, last synced 2026-08-23.
 
 | Repository | Visibility | What it holds | Checked out at | Port |
 |---|---|---|---|---|
 | [`app`](https://github.com/KernAIO/app) | public | Every screen people actually use in Kern. | `kern/repos/app` | 5173 |
+| [`brand`](https://github.com/KernAIO/brand) | public | The Kern logo, in every form anyone needs it — and the rules for using it. | `brand` | — |
 | [`chat`](https://github.com/KernAIO/chat) | public | Conversations in Kern, and the connection that keeps the whole application live. | `kern/repos/chat` | 4100 |
 | [`collab`](https://github.com/KernAIO/collab) | public | Documents that several people edit at the same time, in Kern. | `kern/repos/collab` | 4300 |
 | [`core`](https://github.com/KernAIO/core) | public | Accounts, workspaces and permissions for Kern — who people are, and what they are allowed to do. | `kern/repos/core` | 4000 |
@@ -39,6 +40,7 @@ repo's `.env.example` (`PORT=`) and in the umbrella `CLAUDE.md`, then re-run the
 - `@kernhq/ui`
 
 **modules** publishes:
+- `@kernhq/module-billing`
 - `@kernhq/module-chat`
 - `@kernhq/module-mail`
 - `@kernhq/module-tracker`

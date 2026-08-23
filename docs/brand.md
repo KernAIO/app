@@ -2,6 +2,11 @@
 
 The K and the accent tick, on an ink square.
 
+The public kit — every variant, PNG exports, the usage rules and the trademark policy —
+is **[KernAIO/brand](https://github.com/KernAIO/brand)**. Send people there. This page is the
+working note for the geometry, because the generators that rebuild the mark live in this
+workspace, not in that repository.
+
 ```
 assets/kern-mark.svg         ink square, paper K         the default
 assets/kern-mark-dark.svg    paper square, ink K         on a dark ground

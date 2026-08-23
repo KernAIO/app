@@ -189,6 +189,7 @@ you can build a module, you can build a feature that sits beside ours as an equa
 | [`kernel`](https://github.com/KernAIO/kernel) | The libraries every service and module is built on |
 | [`modules`](https://github.com/KernAIO/modules) | The features Kern ships with |
 | [`docs`](https://github.com/KernAIO/docs) | The documentation site |
+| [`brand`](https://github.com/KernAIO/brand) | The logo, and the rules for using it |
 
 Read `docs/ARCHITECTURE.md` for how the pieces fit, and `docs/PLAN.md` for where this is going.
 
