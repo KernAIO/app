@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 425 144" width="425" height="144" role="img" aria-label="Kern">
+  <rect width="144" height="144" rx="36" fill="#1C1A17"/>
+  <!-- The Kern mark: the K and the accent tick, centred as a group.
+       The K is outlined rather than set as type, so the mark renders
+       identically where an SVG is loaded as an <img> and cannot reach a
+       web font. Geometry: kern docs/brand.md - regenerate, do not hand-edit. -->
+  <path d="M38.81 99.36V44.64H48.69V99.36ZM45.98 70.94 71.87 44.64H85.17L58.16 70.94ZM73.09 99.36 45.83 70.94H58.16L86.69 99.36Z" fill="#FBFAF7"/>
+  <rect x="96.19" y="44" width="9" height="56" rx="4.5" fill="#B4661C"/>
+  <g transform="translate(178.17 114.0) scale(0.11667 -0.11667)" fill="#1C1A17"><path transform="translate(0 0)" d="M50 0V720H204V0ZM155 374 479 720H684L342 374ZM495 0 153 374H342L704 0Z"/><path transform="translate(632 0)" d="M300 -10Q215 -10 152 23.5Q89 57 54.5 117Q20 177 20 255Q20 334 54.5 393.5Q89 453 151 486.5Q213 520 295 520Q374 520 432 488Q490 456 522 399Q554 342 554 265Q554 249 553 235.5Q552 222 550 210H108V309H429L403 291Q403 353 373.5 382.5Q344 412 293 412Q234 412 201.5 372Q169 332 169 252Q169 174 201.5 136Q234 98 299 98Q335 98 361 110Q387 122 400 149H541Q516 75 455.5 32.5Q395 -10 300 -10Z"/><path transform="translate(1181 0)" d="M60 0V510H207V390H210V0ZM210 266 197 387Q215 452 256 486Q297 520 358 520Q377 520 386 516V376Q381 378 372 378.5Q363 379 350 379Q278 379 244 353.5Q210 328 210 266Z"/><path transform="translate(1554 0)" d="M60 0V510H207V390H210V0ZM415 0V316Q415 358 393.5 379Q372 400 331 400Q296 400 268.5 384Q241 368 225.5 340Q210 312 210 274L197 397Q222 453 270.5 486.5Q319 520 390 520Q475 520 520 472.5Q565 425 565 345V0Z"/></g>
+</svg>

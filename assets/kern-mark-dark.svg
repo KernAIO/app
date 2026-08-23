@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="Kern">
-  <rect width="144" height="144" rx="36" fill="#1C1A17"/>
+  <rect width="144" height="144" rx="36" fill="#FBFAF7"/>
   <!-- The Kern mark: the K and the accent tick, centred as a group.
        The K is outlined rather than set as type, so the mark renders
        identically where an SVG is loaded as an <img> and cannot reach a
        web font. Geometry: kern docs/brand.md - regenerate, do not hand-edit. -->
-  <path d="M38.81 99.36V44.64H48.69V99.36ZM45.98 70.94 71.87 44.64H85.17L58.16 70.94ZM73.09 99.36 45.83 70.94H58.16L86.69 99.36Z" fill="#FBFAF7"/>
+  <path d="M38.81 99.36V44.64H48.69V99.36ZM45.98 70.94 71.87 44.64H85.17L58.16 70.94ZM73.09 99.36 45.83 70.94H58.16L86.69 99.36Z" fill="#1C1A17"/>
   <rect x="96.19" y="44" width="9" height="56" rx="4.5" fill="#B4661C"/>
 </svg>
