@@ -83,3 +83,17 @@ pnpm dev       # every service with hot reload
   it — and point `DATABASE_URL` at whichever one you actually mean.
 - `selfhost/` is what users run. Changing a service's port, image name or env contract means changing
   `docker-compose.yml`, `Caddyfile` and `.env.example` here too.
+- **A workspace package can silently resolve to a registry copy, and then local edits do nothing.**
+  `link-workspace-packages=true` links a package the first time the workspace version satisfies the
+  range; pnpm does not re-evaluate a resolution that still satisfies, so once the lockfile records
+  a registry version it keeps it. Today `@kernhq/module-mail` is linked while chat and tracker are
+  registry copies, in the same install. Check with
+  `readlink repos/app/node_modules/@kernhq/module-<id>` before wondering why an edit to a module's
+  client had no effect — the answer is that the app never read your file. This lockfile is
+  gitignored, so the linking state is per machine: two people on the same commit can disagree about
+  which packages are linked, and only one of them sees the bug.
+- **Editing a module's client means a publish round trip, and it is worth checking that first.**
+  `./client` ships as source, so an edit is visible immediately *if* the package is linked and not
+  at all if it is not. Either way the consumer's CI installs from the registry, so the change has to
+  publish before the consumer's commit can go green: module changeset and push, wait for the version
+  to appear on npm, then bump the app.
