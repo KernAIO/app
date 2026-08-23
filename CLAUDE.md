@@ -14,6 +14,9 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - **Do not add `Claude-Session:`, `Co-Authored-By: Claude`, "Generated with", or any AI trailer/branding to commit messages, PRs, or code comments.**
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, with optional scope). Imperative mood, ≤ 72-char subject.
 - Push to `origin main`. Never force-push. If `git pull --rebase` complains about unstaged files that aren't yours (parallel agents share worktrees), use `git -c rebase.autoStash=true pull --rebase`.
+- **Never ask permission to commit, branch, push, or pick a version bump** — those are yours, every
+  time, and asking hands the work back. The only thing that is still the maintainer's call is cutting
+  a release, and you ask that once, after the work is finished and green. See the `kern-ship` skill.
 
 ## Layout & workflow
 - Umbrella dev workspace: `kern/` with sibling repos cloned under `kern/repos/<name>` (gitignored there). pnpm links all `@kernhq/*` packages via the umbrella workspace.
