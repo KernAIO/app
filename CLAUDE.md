@@ -94,6 +94,12 @@ pnpm dev       # every service with hot reload
 
 **Things worth knowing**
 - `repos/` is gitignored: each subdirectory is its own git repository with its own remote.
+- **The umbrella has no turbo task graph, and cannot have one.** Every repo carries its own
+  `turbo.json`, and CI clones that repo alone — so the file has to be a *root* config, while a
+  package inside this workspace would need `extends: ["//"]`, which turbo rejects at a root.
+  `pnpm dev|build|lint|typecheck|test` therefore run `scripts/run-all.sh`, which calls each
+  repo's own script in dependency order (kernel → modules → services → app → docs). It reports
+  every failure rather than stopping at the first, and `--parallel` is what `pnpm dev` uses.
 - **`pnpm status` is the only honest answer to "is everything committed?"** Ten repositories means ten
   answers, and `website` is checked out *beside* the umbrella rather than inside `repos/`, so a loop
   over `repos/*` misses it — silently, which is the worst way to miss something. The script finds
