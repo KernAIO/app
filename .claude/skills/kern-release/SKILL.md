@@ -80,6 +80,16 @@ Traps that have cost real time:
   concurrent pushes will try to publish a version that already exists.
 - **The lockfile** is refreshed with `pnpm install --lockfile-only` after `changeset version`. Skipping
   it leaves every consumer's `--frozen-lockfile` install broken.
+- **A publishing repo's own `pnpm-lock.yaml` is committed, and installing at the umbrella never
+  touches it.** Add a dependency while working in the workspace and the umbrella lock learns about
+  it; the repo's does not, and its CI — which clones the repo alone and runs
+  `--frozen-lockfile` — stops at `ERR_PNPM_OUTDATED_LOCKFILE` before a single test runs. Refresh it
+  from inside the repo (`cd repos/kernel && pnpm install --lockfile-only`) in the same commit as the
+  dependency. Only `kernel` and `modules` commit a lockfile today; the services do not.
+- **A pre-1.0 minor bump leaves every consumer behind, silently.** `^0.1.0` does not accept `0.2.0`,
+  so the moment `@kernhq/kernel` went to 0.2.0 every module resolved the *old* package on the
+  registry and failed on a symbol that exists — while the workspace link kept the umbrella green.
+  A `minor` changeset on a 0.x package is therefore a consumer bump too, in the same rollout.
 
 ## Before you publish a module: pack it for real
 
