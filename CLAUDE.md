@@ -58,6 +58,14 @@ The repositories are **public**, so every commit is visible the moment it is pus
   migration to reverse is not a capability. It is neither a permission (about a person) nor an
   entitlement (about a plan): a self-hosted instance has unlimited entitlements and still needs the
   switchboard. See `docs/adr/0007-module-capabilities.md`.
+- **A widened shared contract is additive for *parsing* and breaking for *constructing*.** A new
+  field with `.default([])` keeps every already-published manifest validating, which is the test
+  everyone applies — but zod's inferred **output** type makes it required, so every service that
+  builds one of those objects stops compiling. `capabilities` did exactly that to core, and CI
+  could not see it because core's range said `^0.2.0` and a caret on 0.x does not cross a minor:
+  CI resolved 0.2.x while every local build used 0.5.0. When you widen a contract, grep for the
+  places that *construct* the type, and bump the consumer's range in the same change — green CI on
+  a stale range is not evidence.
 - **An entitlement key without an enforcement site is a lie.** `kernel.entitlements` declares what a
   plan may limit — seats, storage, modules, SSO, audit retention, API rate — and each key has exactly
   one place in core that checks it. Plan *values* are data an admin edits; the key set is not. Adding
