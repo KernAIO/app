@@ -22,6 +22,14 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - **Do not add `Claude-Session:`, `Co-Authored-By: Claude`, "Generated with", or any AI trailer/branding to commit messages, PRs, or code comments.**
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, with optional scope). Imperative mood, ≤ 72-char subject.
 - Push to `origin main`. Never force-push. If `git pull --rebase` complains about unstaged files that aren't yours (parallel agents share worktrees), use `git -c rebase.autoStash=true pull --rebase`.
+- **Never `git add -A` or `git add .`. Stage the paths you changed, by name.** Several agents share
+  these checkouts, and another one is very often part-way through a new package in the same repo.
+  `git add -A` sweeps their half-finished files into your commit and pushes them — under your commit
+  message, without their lockfile entry, so CI fails at install for everyone. It happened on
+  2026-08-24: a contact-address fix carried two unfinished modules into `main`. Run
+  `git status --porcelain` first and stage from it; if you cannot name every path you are about to
+  commit, you are not ready to commit. When it does happen, do not revert the other agent's files —
+  they are still working on them; tell them instead, and repair what you broke.
 - **Never ask permission to commit, branch, push, or pick a version bump** — those are yours, every
   time, and asking hands the work back. The only thing that is still the maintainer's call is cutting
   a release, and you ask that once, after the work is finished and green. See the `kern-ship` skill.
