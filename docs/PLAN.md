@@ -10,6 +10,11 @@ Decisions already made by the owner:
 - **v1 must include:** issues/projects/process, chat, docs/drive, HR, automation, mail (per-workspace SMTP/providers + per-user IMAP/SMTP inbox), multi-workspace w/ cross-workspace notifications, roles/groups/permissions, **video/audio calls (LiveKit), Recruiting/ATS + CRM/Leads, AI assistant (BYO key), time tracking**.
 - **Design:** I decide (not based on existing files in the folder).
 
+> **Superseded on 2026-08-24 by [ADR 0005](adr/0005-licensing-and-the-module-boundary.md):** the
+> framework (`kernel`, plus `_template` and `workflow`) is Apache-2.0 so that anyone can write a
+> closed module; the product stays AGPL-3.0-only. The CLA is what made that possible. The original
+> note is kept below.
+
 Decision I'm making on the open question (license): **AGPL-3.0 for all public repos + a CLA** (contributors grant KernAIO relicensing rights). AGPL lets everyone self-host/modify, forces SaaS competitors to open their changes, and the CLA keeps the door open for Kern Cloud / enterprise add-ons in a private repo later (same model as Plane, Twenty, Mattermost-ish). Easy to change before the first public release.
 
 > Honest note on multi-repo microservices: it is the owner's call and the plan follows it. The cost (contract versioning, cross-repo changes, more containers) is mitigated by (a) a **small number of services with real runtime reasons**, (b) one shared **`kernel`** runtime so "which module runs in which service" is configuration, (c) an **umbrella dev workspace** that links all repos locally so day-to-day it feels like one monorepo, (d) automated prerelease publishing of shared packages.

@@ -7,7 +7,15 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Never commit secrets, tokens, personal data, or machine-specific paths. Use `.env` (gitignored) + `.env.example`.
 - Write READMEs, docs, and issue/PR text for external contributors, not for ourselves.
 - Keep commit history clean and meaningful — it is part of what people judge the project by.
-- Every repo carries LICENSE (AGPL-3.0), CLA.md, CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md.
+- Every repo carries LICENSE, CLA.md, CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md.
+- **Two licences, split at the framework boundary.** The `kernel` repo and `modules`'
+  `_template` + `workflow` are **Apache-2.0** so anyone can write a closed module; the product —
+  `app`, `core`, `chat`, `mail`, `collab`, `docs`, this umbrella, the first-party modules — is
+  **AGPL-3.0-only**. A new package inherits its repo's licence unless it is something a third-party
+  module must import, and then it is Apache-2.0 with its own LICENSE file. Apache-2.0 packages take
+  only permissive dependencies. If a module author has to import an AGPL package to get something
+  done, move the API — never the licence. See `LICENSING.md` and
+  `docs/adr/0005-licensing-and-the-module-boundary.md`.
 
 ## Git
 - Author identity: `Navid Mirzaaghazadeh <mirzaaghazadeh@icloud.com>` (already set in each repo's local git config — plain `git commit` is correct; do not override with `-c`).

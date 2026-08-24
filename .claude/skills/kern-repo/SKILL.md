@@ -45,7 +45,8 @@ Copy from the closest existing repo rather than inventing — `repos/chat` for a
 `repos/modules` for a package workspace:
 
 ```
-LICENSE (AGPL-3.0)  CLA.md  CODE_OF_CONDUCT.md  SECURITY.md  CONTRIBUTING.md
+LICENSE (AGPL-3.0, or Apache-2.0 if it is framework — see LICENSING.md)
+CLA.md  CODE_OF_CONDUCT.md  SECURITY.md  CONTRIBUTING.md
 README.md  CLAUDE.md  .editorconfig  .gitignore  .npmrc  .nvmrc
 biome.json  renovate.json  tsconfig.json  package.json
 ```

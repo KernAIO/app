@@ -8,7 +8,7 @@ Open source. Self-hosted. Yours.</p>
 <p align="center"><a href="https://kernaio.com"><strong>kernaio.com</strong></a></p>
 
 <p align="center">
-<a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square"></a>
+<a href="LICENSING.md"><img alt="Licence" src="https://img.shields.io/badge/licence-AGPL--3.0%20%2B%20Apache--2.0-blue?style=flat-square"></a>
 <a href="#what-works-today"><img alt="Status" src="https://img.shields.io/badge/status-pre--1.0-orange?style=flat-square"></a>
 <a href="https://github.com/KernAIO/kern/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/KernAIO/kern?style=flat-square"></a>
 <a href="https://www.npmjs.com/org/kernhq"><img alt="npm" src="https://img.shields.io/npm/v/@kernhq/kernel?style=flat-square&label=%40kernhq%2Fkernel"></a>
@@ -203,7 +203,20 @@ in [CLAUDE.md](CLAUDE.md) apply to everyone — people and coding agents alike.
 
 ## Licence
 
-[AGPL-3.0](LICENSE). You may run, read, change and share Kern.
+Two licences, split at one line. **The framework is Apache-2.0. The product is AGPL-3.0-only.**
 
-If you offer a changed Kern to other people over a network, you have to share your changes under the
-same licence. Contributions are accepted under the [CLA](CLA.md).
+You may run Kern for any purpose, for as many people as you like, and change anything in it. If you
+give other people a changed Kern — as a download or over a network — you share those changes under the
+AGPL. That is the whole of the obligation.
+
+**Writing a module?** You only touch the framework — `@kernhq/kernel`, `@kernhq/contracts`,
+`@kernhq/sdk`, `@kernhq/ui` and the template are all Apache-2.0 — so your module is yours. Keep it
+private, keep it closed, sell it. No permission needed.
+
+**Selling hosted Kern?** Allowed. Publish your changes and use your own name — the code is open, the
+name is not. [TRADEMARK.md](TRADEMARK.md) covers that, including how to use the name if you would
+rather partner than compete.
+
+Full map: [LICENSING.md](LICENSING.md) · reasoning:
+[ADR 0005](docs/adr/0005-licensing-and-the-module-boundary.md) · contributions are accepted under the
+[CLA](CLA.md).

@@ -42,7 +42,7 @@ Two things about that table are easy to get wrong:
 - **`website` is deliberately outside `kern/repos/`.** The umbrella's `pnpm-workspace.yaml` globs
   `repos/*` and its lockfile is committed to a public repository; a private package under `repos/`
   would leak its dependency graph into that lockfile and break `pnpm setup` for contributors. It is
-  cloned as a sibling of `kern/`, installs on its own, and is the only repo that is not AGPL-3.0.
+  cloned as a sibling of `kern/`, and installs on its own.
 - **`ripgrep` from the umbrella does not reach it.** Searching "everywhere" means the umbrella *and*
   its siblings.
 
