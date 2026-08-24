@@ -95,6 +95,12 @@ Mailpit for `mail`. Things learned the hard way:
   `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
   cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
   `pnpm install --lockfile-only` there, then copy the lockfile back.
+- **Only `kernel` and `modules` commit a lockfile; `core`, `chat`, `mail`, `app` and `docs` do not.**
+  Their CI is `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo
+  without one resolves fresh from its ranges every run and a repo with one fails at *install* the
+  moment its lockfile drifts — before a single test. Check which kind you are in before adding a
+  dependency; assuming from one repo's behaviour is how a publish job dies at
+  ERR_PNPM_OUTDATED_LOCKFILE having built nothing.
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
 
