@@ -33,9 +33,12 @@ pinned messages, read state and unread counts, presence and typing. Search. Voic
 messages, and file attachments. **Object channels** — a conversation attached to an issue, and a
 message that becomes one.
 
-### Docs
+### Quire
 Documents several people edit at the same time, in nested spaces, with version history and comments.
-Published on the collaboration service that already exists.
+Published on the collaboration service that already exists. A *page* has a published version and a
+draft, so a documentation site never shows half-written text; a *live doc* is always live. Spaces and
+the page tree are built; the editor is next. See
+[ADR 0006](docs/adr/0006-collaborative-documents.md).
 
 ### Mail
 Outbound email per workspace through SMTP, Mailgun, SES, Postmark or Resend, with templates, a
@@ -82,8 +85,9 @@ code type-checks.
 2. **A conversation about an issue.** An issue has its own channel; a message becomes an issue and
    links back. Both modules exist — this is the seam that makes "one application" true rather than
    two applications sharing a sidebar.
-3. **A document a team writes together.** The collaboration service is built, tested, and has no
-   consumer. Spaces, pages, an editor, version history, publishing.
+3. **A document a team writes together.** *In progress.* The collaboration service had no consumer
+   at all; it now has one — `@kernhq/module-quire`, with spaces, a nested page tree and the access
+   check the gateway asks for. Still to come: the editor, version history and publishing.
 4. **Anyone can install it.** The images are public, the one-command install works on a clean
    machine, and the documentation site is live.
 5. **It works in four languages.** Arabic and German are at 155 of about 800 strings. Right-to-left

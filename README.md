@@ -38,9 +38,9 @@ Kern is **pre-1.0 and in active development**. This list is what actually runs, 
 | Notifications across every workspace you belong to | Working |
 | Files, search, audit log, workspace settings | Working |
 | Email the platform sends (per-workspace providers) | Working |
-| Documents several people edit at once | Service runs; no editor yet |
+| Documents several people edit at once (Quire) | Spaces and pages; editor next |
 | Personal mail inbox (your own IMAP account) | Not built |
-| Docs, drive, calendar, HR, recruiting, CRM, automation, calls, AI | Not built |
+| Drive, calendar, HR, recruiting, CRM, automation, calls, AI | Not built |
 
 Everything above is one workspace or many, in English, German, Persian or Arabic, left-to-right or
 right-to-left, in light or dark.
