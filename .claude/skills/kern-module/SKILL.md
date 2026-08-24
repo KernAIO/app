@@ -73,6 +73,27 @@ resolve the *published* package in their own CI, so a consumer merged first cann
 
 Permission keys are `<id>.<noun>.<verb>` and reads need one too.
 
+**Capabilities, if this module is one different customers want *different amounts* of.** Most are
+not: chat, mail, the tracker and billing are each coherent only as a whole, and a capability nobody
+switches is a switch nobody needs — delete the block `_template` ships with. Where it applies (HR is
+the case it was built for), `defineCapabilities` declares named sub-features with dependencies, and
+three rules follow:
+
+- A capability is not a permission. A permission asks whether *this person* may; a capability asks
+  whether *this workspace* has the feature at all. The answer for a disabled one is **404, not
+  403** — `forbidden` claims the surface exists and is being withheld, which is false, and it
+  contradicts a shell that has already hidden the navigation.
+- Middleware order is `workspaceScoped` → `requiresCapability` → `requires`, so a workspace with the
+  whole module off is refused before anything reveals which capabilities it would have had.
+- Switching one off must never destroy data. It is a flag in module settings; anything that would
+  need a migration to reverse is not a capability. That is the test.
+
+A missing `requiresCapability` is invisible — the procedure compiles, the tests pass, and the only
+symptom is a workspace calling a feature it switched off. List every gated procedure in
+`<id>CapabilityProcedures` so `module.test.ts` fails when one loses its middleware. On the client,
+`capability:` on a nav item, route, command, sidebar, widget or settings page is filtered exactly
+like `permission`. See `docs/adr/0007-module-capabilities.md`.
+
 ## 4. Schema and migrations
 
 ```bash
@@ -154,6 +175,7 @@ A new module is reachable only when **all** of these are true. Check them off ex
 
 - [ ] package published, not `private`, `files` covers the client's imports
 - [ ] contract, permissions, events declared and implemented
+- [ ] capabilities declared and gated, or the `_template` block deleted — never left half-wired
 - [ ] `mod_<id>` schema, RLS migration, tenant isolation test
 - [ ] imported into a host service's module list
 - [ ] registered in `app/src/lib/modules/registry.ts`
