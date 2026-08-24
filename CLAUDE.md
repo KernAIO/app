@@ -63,6 +63,13 @@ Mailpit for `mail`. Things learned the hard way:
   placeholder token, and npm answers a bad token with **404**, so public packages appear to vanish.
 - A repository is built **standalone** in CI. `workspace:*` only resolves inside the umbrella
   workspace; depend on the published version instead.
+- **Each repository's own `pnpm-lock.yaml` is what CI installs from, and you cannot refresh it from
+  inside the umbrella.** Add a dependency to a package and the umbrella install updates the *umbrella*
+  lockfile, leaving the repo's committed one stale — CI then fails every job at
+  `ERR_PNPM_OUTDATED_LOCKFILE`, install-time, before a single test runs. Plain `pnpm install` in
+  `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
+  cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
+  `pnpm install --lockfile-only` there, then copy the lockfile back.
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
 
