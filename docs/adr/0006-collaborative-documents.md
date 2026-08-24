@@ -95,8 +95,12 @@ service that owns tables of its own gets migrations for the same reasons a modul
 
 - A read-only participant is visible in presence but broadcasts no caret. Read-only is decided by the
   gateway and the browser only learns it as a hint, so the stripping happens server-side.
-- Undo must be scoped per user (`Y.UndoManager` with `trackedOrigins`). It is not the default, and
-  the symptom is ⌘Z undoing a colleague's paragraph.
+- Undo is scoped per user on the Tiptap path already — y-tiptap's undo plugin defaults to
+  `trackedOrigins: new Set([ySyncPluginKey])`, and a remote update carries the provider as its
+  origin, so it never enters the undo stack. A bare `Y.UndoManager` tracks origin `null` and does
+  not have this property, so supplying one by hand is how ⌘Z starts undoing a colleague's paragraph.
+  Worth stating because the opposite is widely repeated, and this was checked in the installed
+  package rather than assumed.
 - Comment anchors use Yjs *relative* positions. Index positions do not survive concurrent edits.
 - Nothing removed a document when its object was deleted; purging a page now tells collab to forget
   it, best-effort, because a collab service that is briefly down must not turn a successful delete
