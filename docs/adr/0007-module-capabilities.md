@@ -56,6 +56,19 @@ Middleware order is `workspaceScoped` → `requiresCapability` → `requires`. A
 module off is refused first, so the 403/404 distinction never reveals which capabilities the module
 would have had.
 
+**3b. The server gates on the registry and the settings row — never on what an API response said.**
+
+`requiresCapability` resolves through `kernel.capabilities()`, which reads the module's declared
+definitions from the registry and the workspace's stored flags. It does not consult
+`WorkspaceModuleState.capabilities`; that field exists so the *shell* can filter contributions
+without a round trip per module.
+
+Worth stating because getting it backwards leads somewhere plausible and wrong. When core briefly
+reported an empty capability list, the natural reading was "every gated procedure will 404" — it
+would not have. The API would have kept working while the interface quietly hid the screens that
+reach it. Same root cause, opposite symptom, and a day lost looking in the wrong half of the system.
+The rule that avoids it: **the server never trusts a value that travelled to a client and back.**
+
 **4. Switching one off never destroys data.**
 
 Capabilities live under a reserved `$capabilities` key in the module's settings jsonb — the
@@ -63,6 +76,17 @@ platform's, not the module's, which is why a module's own settings schema never 
 Switching one off writes one boolean. The tables stay, so switching it back on restores exactly what
 was there. **Anything that would need a migration to reverse does not belong behind a capability**;
 that is the test for whether something is a capability at all.
+
+**4b. The reserved key has to survive the module's own settings schema.**
+
+Storing the flags under `$capabilities` inside the module's settings blob is only safe because
+core lifts the key out before the module's zod schema sees it. A zod object strips unknown keys, so
+the obvious implementation — parse the blob, store the result — **deletes every switch on any
+settings write**. Silently, months after the switch was set, triggered by an unrelated edit.
+
+This is the sharpest edge in the design, and the reason "reserved" has to be enforced in the write
+path rather than being a naming convention. It is covered by `core`'s `capabilities.test.ts`, which
+was checked by reverting the fix and confirming the right test fails.
 
 **5. The client half is one optional field, filtered where filtering already happens.**
 
