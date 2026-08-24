@@ -41,6 +41,15 @@ The repositories are **public**, so every commit is visible the moment it is pus
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
   purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
+- **A module is the coarse switch; a capability is the one below it.** A module different customers
+  want *different amounts* of declares capabilities — named sub-features with dependencies that a
+  workspace switches, off for everyone rather than for one person. A disabled one answers **404, not
+  403**: `forbidden` says the surface exists and you may not have it, which is false for a workspace
+  that never enabled the feature, and it contradicts a shell that already hid the navigation.
+  Switching one off must never destroy data — it is a flag in module settings, so anything needing a
+  migration to reverse is not a capability. It is neither a permission (about a person) nor an
+  entitlement (about a plan): a self-hosted instance has unlimited entitlements and still needs the
+  switchboard. See `docs/adr/0007-module-capabilities.md`.
 - **An entitlement key without an enforcement site is a lie.** `kernel.entitlements` declares what a
   plan may limit — seats, storage, modules, SSO, audit retention, API rate — and each key has exactly
   one place in core that checks it. Plan *values* are data an admin edits; the key set is not. Adding
