@@ -176,6 +176,16 @@ pnpm dev       # every service with hot reload
   *flow* mapping (`environment: { A: ${A} }`) opens a nested mapping and the whole document stops
   parsing — the file shipped that way and `docker compose config` failed on it, which no test
   covered because nothing parsed it. Quote every interpolation inside `{ }`.
+- **A standalone repo needs its own `pnpm.overrides` too, for the same reason the umbrella has one.**
+  A published module whose range still says `@kernhq/kernel: ^0.2.0` drags a second kernel into a
+  consumer's tree, and a caret on 0.x never crosses a minor — so `core` installed kernel 0.2.0 for
+  `billing` and 0.6.0 for itself and `tracker`. Two structurally distinct declarations of
+  `ServerModule`, so `[trackerModule, billingModule]` stopped being assignable to `ServerModule[]`
+  even though both packages export exactly the same type. Invisible locally, because the umbrella
+  already pins these. `"overrides": { "@kernhq/kernel": "$@kernhq/kernel" }` forces one copy, which
+  is the honest model: there is only ever one kernel at runtime. Reproduce this class of bug with a
+  registry install in a clone outside the workspace — a local build resolves differently and proves
+  nothing.
 - **`pnpm.overrides` pins `@kernhq/contracts|kernel|sdk|ui` to `workspace:*`.** Without it a repo
   whose dependency range excludes the local version (app wanted `module-tracker@^0.3.0`, the
   workspace had 0.2.1) installs the published module, which drags a published `@kernhq/contracts`
