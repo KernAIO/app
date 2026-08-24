@@ -77,7 +77,12 @@ Two things do not get you this freedom:
 - **Modifying the product.** Change `core`, `app` or a first-party module and the AGPL applies to
   those changes, module or not.
 
-**For maintainers:** the boundary only holds if the Apache-2.0 packages are enough to write a complete
+**For maintainers:** a *first-party* module is AGPL-3.0-only and carries no `LICENSE` file of its own —
+the repository root covers it. `scripts/new-module.mjs` copies the Apache-2.0 template, so it must
+overwrite the licence field and delete the copied `LICENSE`; an Apache-2.0 first-party module gives
+away the copyleft that makes the product's licence mean anything.
+
+The boundary only holds if the Apache-2.0 packages are enough to write a complete
 module. If a module author has to reach into an AGPL package to get something done, that is a bug in
 the boundary, not a licensing question — move the API, do not move the licence.
 
