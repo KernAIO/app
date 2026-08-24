@@ -9,6 +9,11 @@ A module is the unit of growth. It owns its tables, its permissions, its events 
 a workspace can switch it off and have every trace of it disappear. Getting a new one wired takes
 about nine steps, and skipping any one of them produces something that compiles and is not reachable.
 
+These steps describe the module system **as it is today**. If the feature needs something the module
+contract does not offer, that is not a reason to bend the feature into the template's shape: read
+`kern-platform` and move the kernel, `_template` and the existing modules together. The template is
+the current best answer, not the law.
+
 ## 1. Decide where it lives — before writing anything
 
 Three answers, in order of how often they are right:
@@ -31,11 +36,17 @@ Say which of the three you picked and why, in one sentence, before you start.
 ## 2. Create the package
 
 ```bash
-cd repos/modules/packages
-cp -r _template <id> && cd <id>
+cd repos/modules
+pnpm new-module <id>          # scripts/new-module.mjs
 ```
 
-Then fix the things a copy gets wrong — each of these has bitten:
+It copies `_template`, rewrites every `template` identifier, drops `private`, and — inside the
+umbrella workspace, where `repos/app` sits beside it — writes the app half's `permissions.ts`,
+`api.ts` and `mock.ts` too. It prints what is left. Do not hand-copy `_template`: the generator exists
+because every one of the fixes below was once forgotten.
+
+Read the result against these anyway, and if the generator has fallen behind the template, fix the
+generator in the same change (`kern-platform` §5) — each of these has bitten:
 
 - `name`: `@kernhq/module-<id>`, and **delete `"private": true`**. A private package is silently
   skipped by `changeset publish`, so the release "succeeds" and nothing reaches the registry.
@@ -87,6 +98,8 @@ whatever is registered and knows nothing else about you.
 
 - UI lives in the app under `app/src/lib/modules/<id>/`, importing types and pure logic from
   `@kernhq/module-<id>/client`.
+- The generator wrote `permissions.ts`, `api.ts` and `mock.ts` for you; the manifest
+  (`client.ts`) and the registry entry are still hand-work.
 - Register it in `app/src/lib/modules/registry.ts` — one import plus one `registerModule(...)`. A
   module that is not registered has no navigation and no routes, however complete the package is.
 - Every string goes through Paraglide, in **all four** message files: `app/messages/{en,fa,ar,de}.json`.
@@ -148,3 +161,5 @@ A new module is reachable only when **all** of these are true. Check them off ex
 - [ ] messages in en, fa, ar, de
 - [ ] changeset written, consumers bumped to a published version
 - [ ] selfhost + docs updated if the surface changed
+- [ ] any platform capability this module needed and did not find: added through `kern-platform`,
+      with `_template`, the generator and the other modules moved with it — not faked locally

@@ -33,6 +33,7 @@ real notes harder to find.
 | A decision with architectural consequences | `docs/adr/NNNN-*.md` | same commit |
 | Something a *user* or self-hoster needs | `docs/`, `README.md`, `selfhost/` | same commit |
 | A repeatable procedure or completeness bar | a skill in `kern/.claude/skills/` | when it recurs |
+| A capability the module system was missing | kernel + `_template` + generator + every module (`kern-platform`) | same change |
 
 "Same commit as the change that taught you" is the rule that makes this survive. A separate
 documentation commit gets postponed until it is forgotten or wrong.
@@ -44,6 +45,12 @@ single fact. `kern-service` and `kern-ui` exist because "is this done?" has a lo
 
 Before creating one, check whether an existing skill should grow instead — five overlapping skills are
 worse than three sharp ones, because the wrong one gets loaded.
+
+And check the other direction too: if a session kept working around a rule in a skill, the rule may
+be what is wrong. A skill that describes a template or a kernel surface stops being true the moment
+that surface moves — so a platform change (`kern-platform`) carries its skill edits in the same
+commit, and "the skill said X, the code now does Y" is a bug report about the skill, not about the
+work.
 
 Anatomy of one that works here:
 

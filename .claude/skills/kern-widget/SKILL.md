@@ -12,7 +12,9 @@ counts, makes the whole platform look like a demo. Work through this before addi
 ## 1. Name the procedure before you design the card
 
 A widget is a view of data that already exists. Find the procedure first, and if there is not one,
-the honest answers are "add it to the module" or "not yet" — never "approximate it".
+the honest answers are "add it to the module" or "not yet" — never "approximate it". If the card
+needs something the widget contribution itself cannot express — a size, a setting field, a slot that
+does not exist — that is a kernel-client change, not a workaround: `kern-platform`.
 
 ```bash
 # what this module actually offers

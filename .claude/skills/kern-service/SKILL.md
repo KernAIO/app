@@ -8,6 +8,11 @@ description: The completeness bar for Kern backend work — a module, a service,
 Type-checking proves shapes line up. It proves nothing about whether the thing works, isolates
 tenants, or tells the truth when it fails. Work through this before calling backend work done.
 
+This is the bar for work built on the kernel as it stands. When the honest answer is that the kernel
+has no seam for what the module needs — and the alternative is reaching into another module's tables
+or patching a service from the outside — stop and read `kern-platform`: the extension point, the
+template and every existing module move together, in one change.
+
 ## 1. Implement the whole contract
 
 The contract is the promise. A procedure that exists in `contract` and not in `router` is a lie that
