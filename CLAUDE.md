@@ -105,11 +105,11 @@ Mailpit for `mail`. Things learned the hard way:
   Fail when `process.env.CI` is set.
 
 ## Writing
-Documentation — READMEs, guides, runbooks, `docs/`, and any procedure someone follows — uses the
-`adhd-friendly-ste-technical-writer` skill in `.claude/skills/`: goal first, one action per step,
-short sentences, conditions before commands, an observable result after every important action.
-It is a house style inspired by ASD-STE100, not certified compliance — do not claim otherwise.
-It governs documents for readers. Code comments and commit messages keep the voice they have.
+Documentation — READMEs, guides, runbooks, `docs/`, ADRs, and any procedure someone follows — uses
+the `kern-writing` skill in `.claude/skills/`: decide where it belongs first, goal before steps, one
+action per step, conditions before commands, an observable result after every important action, and
+never the present tense for something that is not built. It governs documents for readers. Code
+comments and commit messages keep the voice they have; user-facing strings belong to `kern-language`.
 
 ## Quality bar
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.

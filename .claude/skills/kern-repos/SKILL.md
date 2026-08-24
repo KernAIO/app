@@ -55,7 +55,7 @@ Two things about that table are easy to get wrong:
 | A procedure, a migration, a permission key | the service that hosts the module | `kern-service` |
 | A shared type, contract or event | `kernel/packages/contracts` | `kern-release` |
 | Install, compose, Caddy, an ADR | `kern` | `kern-repo` |
-| A documentation page | `docs` | `adhd-friendly-ste-technical-writer` |
+| A documentation page | `docs` | `kern-writing` |
 | Marketing copy, pricing, a landing page | `website` | — |
 | A whole new service or package set | a new repository — but read the gate first | `kern-repo` |
 

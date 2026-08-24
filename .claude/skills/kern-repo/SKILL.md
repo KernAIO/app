@@ -52,7 +52,7 @@ biome.json  renovate.json  tsconfig.json  package.json
 ```
 
 - `README.md` is written for a stranger, not for us: what this service is, how to run it alone, how it
-  fits the whole. Use the `adhd-friendly-ste-technical-writer` skill.
+  fits the whole. Use the `kern-writing` skill.
 - `CLAUDE.md` carries the repo-specific half — its port, its env contract, its traps.
 - `.npmrc` is `engine-strict=true`, `auto-install-peers=true`, `link-workspace-packages=true`.
 - Package name `@kernhq/<name>`, `"license": "AGPL-3.0-only"`, `"type": "module"`, Node ≥ 24,
