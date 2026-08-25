@@ -47,10 +47,10 @@ practice. Somebody outside this organisation starts from the published package; 
 is the shortcut for people who already have the workspace. Both must produce the same module, so a
 change to one is a change to both.
 
-It copies `_template`, rewrites every `template` identifier, drops `private`, and — inside the
-umbrella workspace, where `repos/app` sits beside it — writes the app half's `permissions.ts`,
-`api.ts` and `mock.ts` too. It prints what is left. Do not hand-copy `_template`: the generator exists
-because every one of the fixes below was once forgotten.
+It copies `_template` and rewrites every `template` identifier — including the URLs the manifest
+declares and the namespaced keys in the message bundle. There is no app half: a module is one
+package, and `_template` is a whole one. It prints what is left. Do not hand-copy `_template`: the
+generator exists because every one of the fixes below was once forgotten.
 
 Read the result against these anyway, and if the generator has fallen behind the template, fix the
 generator in the same change (`kern-platform` §5) — each of these has bitten:
@@ -121,17 +121,35 @@ than trusting this list.
 
 ## 6. Client module
 
-The client module manifest contributes nav, routes, commands, slots and presenters. The shell renders
-whatever is registered and knows nothing else about you.
+The manifest contributes nav, routes, commands, widgets, settings pages, slots and presenters. The
+shell renders whatever is registered and knows nothing else about you.
 
-- UI lives in the app under `app/src/lib/modules/<id>/`, importing types and pure logic from
-  `@kernhq/module-<id>/client`.
-- The generator wrote `permissions.ts`, `api.ts` and `mock.ts` for you; the manifest
-  (`client.ts`) and the registry entry are still hand-work.
-- Register it in `app/src/lib/modules/registry.ts` — one import plus one `registerModule(...)`. A
-  module that is not registered has no navigation and no routes, however complete the package is.
-- Every string goes through Paraglide, in **all four** message files: `app/messages/{en,fa,ar,de}.json`.
-  English-only strings are a broken RTL build waiting to happen.
+**It all lives in the package** — `src/client/module.ts`, `pages/`, `widgets/`, `i18n.ts`. The app
+holds no screens belonging to a module, and deleting the package removes the feature completely
+(ADR 0008). There are no route files in the app to keep in step: declare a route and it is mounted.
+
+- **Register it**: one import plus one `registerModule(...)` in `app/src/lib/modules/registry.ts`,
+  from `@kernhq/module-<id>/client`. With `featureModules` in a host service that is the only wiring
+  outside the package. A module that is not registered has no navigation and no routes, however
+  complete the package is.
+- **Strings live in `src/client/i18n.ts`**, namespaced by module id, one bundle per locale. Paraglide
+  compiles the *app's* catalogue and cannot see you. A counted message is a map of CLDR plural
+  category to string — English has two forms, Arabic has six. Shared words (Save, Cancel, Retry)
+  come from the framework's `common` bundle; do not copy them.
+- **Everything the shell provides comes from `@kernhq/ui`.** Stateless things are exported (`t`, the
+  formatters, query `keys`, `uploadFile`, components, charts); stateful things are read from a
+  singleton the shell fills (`session`, `navigation`, `getHost`).
+
+Three mistakes compile while you edit inside the app and fail the moment the package builds alone.
+All three shipped, in three different modules:
+
+- **`$app/state` / `$app/navigation`** do not exist in a package. A route component is given
+  `workspaceId`, `workspaceSlug` and `params`; anything else asks `navigation`.
+- **Importing your own barrel** (`./index.js`) is a cycle — and the barrel reaches the manifest,
+  so a pure-function test going through it dies with `$state is not defined`. Name the file.
+- **A local called `t`** shadows the message function. `(t) => t('x')` type-checks as a property
+  access on whatever `t` is. Six of these were in tracker alone.
+
 - Then the `kern-ui` skill before calling any screen done.
 
 ## 7. Host it
@@ -185,7 +203,9 @@ A new module is reachable only when **all** of these are true. Check them off ex
 - [ ] capabilities declared and gated, or the `_template` block deleted — never left half-wired
 - [ ] `mod_<id>` schema, RLS migration, tenant isolation test
 - [ ] imported into a host service's module list
-- [ ] registered in `app/src/lib/modules/registry.ts`
+- [ ] screens, strings and manifest in `src/client`; nothing of this module in the app
+- [ ] registered in `app/src/lib/modules/registry.ts` (one line)
+- [ ] `pnpm --filter @kernhq/module-<id> typecheck` passes — it checks the client too
 - [ ] widgets declared, or a sentence saying why the module has none (`kern-widget`)
 - [ ] messages in en, fa, ar, de
 - [ ] changeset written, consumers bumped to a published version

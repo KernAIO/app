@@ -41,7 +41,14 @@ there is a promise to strangers.
 | Client contribution types | `@kernhq/kernel/client`, bound to Svelte in `repos/kernel/packages/ui/src/lib/module.ts` |
 | The shell that renders it | `repos/app/src/routes/(app)/[ws]/+layout.svelte`, `lib/components/CommandPalette.svelte`, `lib/dashboard/*`, `lib/modules/ModuleSidebar.svelte` |
 | The shape every module starts from | `repos/modules/packages/_template` |
-| The generator | `repos/modules/scripts/new-module.mjs` (package half *and* app half) |
+| The generator | `repos/modules/scripts/new-module.mjs` (one package — there is no app half) |
+
+**The client seam is `@kernhq/ui`, and widening it is platform work too.** A module's screens live
+in its own package and cannot import the app (ADR 0008), so anything they need from the shell is
+either exported from `@kernhq/ui` (stateless: `t`, formatters, query keys, components) or read from
+a singleton the shell fills (stateful: `session`, `navigation`, `getHost`). A module reaching into
+the app is a missing extension point, not a shortcut — and it will compile until the package is
+built on its own.
 
 A field added to `ServerModule` and read nowhere is decoration: every module that fills it in does
 nothing, and nothing fails. Add the consumer in the same change as the declaration.
@@ -99,7 +106,7 @@ need it. Then the hosts — `repos/core/src/service.ts` and the other services' 
       package now (`@kernhq/module-template`), and it is what a third party outside this
       organisation copies. A template a release left behind teaches the old shape to everyone
       who starts after it.
-- [ ] `new-module.mjs` generates it, both halves
+- [ ] `new-module.mjs` generates it
 - [ ] every existing module updated, or a stated reason
 - [ ] host services and the app registry
 - [ ] `selfhost/` and `docs/` if what a self-hoster configures or sees changed

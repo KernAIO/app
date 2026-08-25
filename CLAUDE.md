@@ -55,6 +55,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
   purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
+- **A module ships its own screens, and the app ships only the shell.** Contract, server, pages,
+  widgets, strings and manifest are one package; deleting it removes the feature completely. The
+  wiring outside it is two lines — `featureModules` in a host service, `registerModule` in the app's
+  registry. A module cannot import the app, so everything its screens need comes from `@kernhq/ui`:
+  **stateless things are exported** (`t`, formatters, query keys, components, charts) and **stateful
+  things are read from a singleton the shell fills** (`session`, `navigation`, `getHost`). Three
+  mistakes compile while you edit inside the app and fail the moment the package builds alone, and
+  all three shipped: importing `$app/state`, importing your own barrel, and a local called `t`
+  shadowing the message function. Each module package type-checks its own client — that is the only
+  thing that sees them. See `docs/adr/0008-a-module-ships-its-own-screens.md`.
 - **A module is the coarse switch; a capability is the one below it.** A module different customers
   want *different amounts* of declares capabilities — named sub-features with dependencies that a
   workspace switches, off for everyone rather than for one person. A disabled one answers **404, not
