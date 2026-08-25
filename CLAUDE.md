@@ -91,6 +91,13 @@ The repositories are **public**, so every commit is visible the moment it is pus
   again. When nothing answers `billing.entitlements.get`, every workspace is unlimited: that is what
   every self-hosted instance does on every request, so it is the default path and must not throw.
   See `docs/adr/0003-billing-entitlements-and-cloud.md`.
+- **The module template is its own repository.** `KernAIO/module-template` is Apache-2.0 and
+  published as `@kernhq/module-template`; it was a package inside the AGPL `modules` repo, which
+  meant the only way to get the permissive starting point was to clone six copyleft modules with it.
+  `pnpm new-module` fetches the published package rather than keeping a second copy, so `pnpm
+  new-module` and `npx degit KernAIO/module-template` produce the same module by construction. It is
+  cloned into `repos/` and linked, so a platform change that breaks the template breaks it here
+  first — which is what `kern-platform`'s checklist depends on.
 - Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
   allocation, the next free number, and the map of every repository are generated —
   `node .claude/skills/kern-repos/scripts/sync.mjs`, then read the `kern-repos` skill.
