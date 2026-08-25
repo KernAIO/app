@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "prompt",
+            "continueOnBlock": true,
+            "prompt": "You are gatekeeping a question an agent is about to put to Navid, the maintainer of Kern. He has standing instructions (CLAUDE.md, the kern-ship skill) that the agent decides ALL of these alone and is never to be asked about them: whether to commit, which branch, commit message, whether to push, the semver bump, whether to write a changeset, whether to cut a release or tag a version, whether to fix its own CI failure, formatting/lint/style choices, file and directory naming, which test to write, and any 'shall I go ahead / should I continue / do you want me to' phrasing about work already asked for.\n\nRead the question in $ARGUMENTS. If it is about any of those, respond {\"ok\": false, \"reason\": \"Navid does not answer this class of question — see the kern-ship skill. Decide it yourself, do the work, and report what you did afterwards. If you are unsure whether the work is finished, it is not: commit it, push it, and say what remains.\"}\n\nAllow the question through with {\"ok\": true} when it is a genuine product or direction decision only he can make: what to build next, what a feature should do, pricing, naming a user-facing thing, a trade-off with no technically correct answer, or anything that would delete data or spend his money. When in doubt about which kind it is, allow it."
+          }
+        ]
+      }
+    ]
+  }
+}
