@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""The Coolify stack is a second copy of the self-host stack, and a copy is only useful while it
-stays the same stack. Two things make it the same: the environment `core` is handed, and the paths
-Caddy routes. Both are easy to change in one file and forget in the other, and neither shows up as
-a failure until somebody deploys.
+"""The Coolify stack and the Kern Cloud stack are second and third copies of the self-host stack,
+and a copy is only useful while it stays the same stack. Two things make them the same: the
+environment `core` is handed, and the paths Caddy routes. Both are easy to change in one file and
+forget in the others, and none of it shows up as a failure until somebody deploys.
 
     python3 scripts/check-selfhost-drift.py
     python3 scripts/check-selfhost-drift.py --emit-caddyfile /tmp/Caddyfile
+    python3 scripts/check-selfhost-drift.py --emit-cloud-caddyfile /tmp/Caddyfile.cloud
 
-`--emit-caddyfile` writes out the config the Coolify stack builds at run time, so `caddy validate`
-can read it. Nothing else ever would: it lives in a heredoc inside a container command.
+The emit flags write out the config a stack builds at run time, so `caddy validate` can read it.
+Nothing else ever would: it lives in a heredoc inside a container command.
+
+What a copy is allowed to differ in is the *value* of a variable, never the set of keys — Kern
+Cloud points S3_PUBLIC_ENDPOINT at its own storage hostname, for instance, because Cloudflare
+rejects a proxied body over 100 MB and core signs single-PUT URLs far larger than that.
 """
 
 import re
@@ -19,6 +24,7 @@ import yaml
 
 HOST = "selfhost/docker-compose.yml"
 COOLIFY = "selfhost/coolify/docker-compose.yml"
+CLOUD = "cloud/docker-compose.yml"
 
 
 def config(path):
@@ -33,16 +39,16 @@ def config(path):
 failed = False
 
 
-def compare(what, host_set, coolify_set):
+def compare(what, other_path, host_set, other_set):
     global failed
-    if host_set == coolify_set:
-        print(f"✔ {what}")
+    if host_set == other_set:
+        print(f"✔ {what} ({other_path})")
         return
     failed = True
-    for key in sorted(host_set - coolify_set):
-        print(f"::error::{what}: {key} is in {HOST} and missing from {COOLIFY}")
-    for key in sorted(coolify_set - host_set):
-        print(f"::error::{what}: {key} is in {COOLIFY} and missing from {HOST}")
+    for key in sorted(host_set - other_set):
+        print(f"::error::{what}: {key} is in {HOST} and missing from {other_path}")
+    for key in sorted(other_set - host_set):
+        print(f"::error::{what}: {key} is in {other_path} and missing from {HOST}")
 
 
 def kern_images(doc):
@@ -61,26 +67,36 @@ def routes(caddyfile):
     return [re.sub(r"\s+", " ", line).strip() for line in caddyfile.splitlines() if directive.match(line)]
 
 
-host, coolify = config(HOST), config(COOLIFY)
+def inline_caddyfile(doc):
+    """Neither copy has a Caddyfile beside it: a pasted Compose file has no files to mount, so the
+    config is a heredoc inside the container's command."""
+    return doc["services"]["caddy"]["command"][0].split("<<'CADDYFILE'", 1)[1].split("\nCADDYFILE", 1)[0]
 
-compare("core environment", set(host["services"]["core"]["environment"]), set(coolify["services"]["core"]["environment"]))
-compare("Kern images", kern_images(host), kern_images(coolify))
 
-# The Coolify file has no Caddyfile beside it: a pasted Compose file has no files to mount, so the
-# config is a heredoc inside the container's command.
-inline = coolify["services"]["caddy"]["command"][0].split("<<'CADDYFILE'", 1)[1].split("\nCADDYFILE", 1)[0]
+def emit(flag, text):
+    if flag in sys.argv:
+        destination = sys.argv[sys.argv.index(flag) + 1]
+        open(destination, "w").write(text)
+        print(f"✔ wrote {destination}")
 
-if "--emit-caddyfile" in sys.argv:
-    destination = sys.argv[sys.argv.index("--emit-caddyfile") + 1]
-    open(destination, "w").write(inline)
-    print(f"✔ wrote the Coolify Caddy config to {destination}")
 
-if routes(open("selfhost/Caddyfile").read()) == routes(inline):
-    print("✔ Caddy routes")
-else:
-    failed = True
-    print(f"::error::the Caddy config inside {COOLIFY} no longer routes the same paths as selfhost/Caddyfile")
-    print("  host:    ", routes(open("selfhost/Caddyfile").read()))
-    print("  coolify: ", routes(inline))
+host = config(HOST)
+host_routes = routes(open("selfhost/Caddyfile").read())
+
+for path, emit_flag in ((COOLIFY, "--emit-caddyfile"), (CLOUD, "--emit-cloud-caddyfile")):
+    doc = config(path)
+    compare("core environment", path, set(host["services"]["core"]["environment"]), set(doc["services"]["core"]["environment"]))
+    compare("Kern images", path, kern_images(host), kern_images(doc))
+
+    inline = inline_caddyfile(doc)
+    emit(emit_flag, inline)
+
+    if routes(inline) == host_routes:
+        print(f"✔ Caddy routes ({path})")
+    else:
+        failed = True
+        print(f"::error::the Caddy config inside {path} no longer routes the same paths as selfhost/Caddyfile")
+        print("  host: ", host_routes)
+        print(f"  {path}: ", routes(inline))
 
 sys.exit(1 if failed else 0)

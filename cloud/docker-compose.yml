@@ -1,0 +1,210 @@
+# Kern Cloud — the instance that runs at app.kernaio.com.
+#
+# This is *not* the self-host artifact. `selfhost/coolify/docker-compose.yml` is what a customer
+# pastes into their own Coolify, and it deliberately serves everything from one domain. Kern Cloud
+# needs two, for one reason:
+#
+#   Cloudflare's Free and Pro plans reject a request body over 100 MB, and core hands out presigned
+#   single-PUT URLs up to UPLOAD_MAX_PUT_BYTES — 500 MB by default. Serving those through the
+#   proxied app domain would fail every upload over 100 MB with a 413 that the browser reports as a
+#   network error. So MinIO gets its own hostname, left DNS-only at Cloudflare, and the app domain
+#   keeps the CDN and the WAF.
+#
+# Coolify -> Configuration -> Domains:
+#   caddy  ->  https://app.kernaio.com     (proxied at Cloudflare)
+#   minio  ->  https://files.kernaio.com   (DNS-only at Cloudflare — do not turn the cloud orange)
+#
+# Every secret is a Coolify magic variable, generated once and kept by Coolify. Nothing here is a
+# credential and nothing here belongs in .env.
+
+x-kern-env: &kern-env
+  NODE_ENV: production
+  KERN_BASE_URL: ${SERVICE_URL_CADDY}
+  KERN_SECRET: ${SERVICE_BASE64_64_KERNSECRET}
+  DATABASE_URL: postgres://kern:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/kern
+  NATS_URL: nats://nats:4222
+  VALKEY_URL: redis://valkey:6379
+  S3_ENDPOINT: http://minio:9000
+  # The dedicated storage hostname. See the note at the top: this is the whole reason the cloud
+  # file differs from the self-host one.
+  S3_PUBLIC_ENDPOINT: ${SERVICE_URL_MINIO}
+  S3_REGION: us-east-1
+  S3_BUCKET: kern
+  S3_ACCESS_KEY: kern
+  S3_SECRET_KEY: ${SERVICE_PASSWORD_MINIO}
+  SMTP_URL: ${SMTP_URL:-}
+  MAIL_FROM: ${MAIL_FROM:-Kern <no-reply@kernaio.com>}
+  BETTER_AUTH_SECRET: ${SERVICE_BASE64_64_AUTHSECRET}
+  BETTER_AUTH_URL: ${SERVICE_URL_CADDY}
+  CORE_URL: http://core:4000
+  CHAT_URL: http://chat:4100
+  MAIL_URL: http://mail:4200
+  COLLAB_URL: http://collab:4300
+  # Calls need a LiveKit with its own UDP range, which Coolify's proxy cannot front. Off until
+  # there is a LiveKit to point at.
+  LIVEKIT_URL: ${LIVEKIT_URL:-}
+  LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+  LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+  # Billing. Empty until live Stripe keys exist — and until they do, every workspace resolves to
+  # unlimited, which is the wrong answer for a paid instance. See
+  # docs/adr/0003-billing-entitlements-and-cloud.md.
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  KERN_DEFAULT_PLAN_SLUG: ${KERN_DEFAULT_PLAN_SLUG:-}
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      - SERVICE_URL_CADDY_80
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat >/etc/caddy/Caddyfile <<'CADDYFILE'
+        {
+          # Coolify's proxy sits in front on a private address, and Cloudflare in front of that.
+          # Without trusting the local hop, Caddy replaces the client IP with the proxy's and
+          # rewrites X-Forwarded-Proto to http, so every service behind here believes the request
+          # arrived unencrypted.
+          servers {
+            trusted_proxies static private_ranges
+          }
+        }
+
+        :80 {
+          encode zstd gzip
+
+          @chat path /api/chat/* /ws /ws/*
+          handle @chat {
+            reverse_proxy chat:4100
+          }
+          handle_path /api/mail/* {
+            rewrite * /api/mail{uri}
+            reverse_proxy mail:4200
+          }
+          handle /collab* {
+            reverse_proxy collab:4300
+          }
+          # Kept so presigned URLs issued before the storage hostname existed still resolve.
+          # Nothing new is signed against this path — S3_PUBLIC_ENDPOINT points at minio directly.
+          handle_path /s3/* {
+            reverse_proxy minio:9000
+          }
+          handle /api/* {
+            reverse_proxy core:4000
+          }
+          handle {
+            reverse_proxy app:3000
+          }
+
+          header {
+            X-Content-Type-Options nosniff
+            Referrer-Policy strict-origin-when-cross-origin
+            Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+            Content-Security-Policy "frame-ancestors 'none'"
+            X-Frame-Options DENY
+            -Server
+          }
+        }
+        CADDYFILE
+        caddy fmt --overwrite /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    depends_on: [app, core]
+
+  app:
+    image: ghcr.io/kernaio/app:${KERN_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *kern-env
+      PORT: 3000
+      ORIGIN: ${SERVICE_URL_CADDY}
+      PUBLIC_API_URL: ${SERVICE_URL_CADDY}
+      PUBLIC_WS_URL: ${SERVICE_URL_CADDY}/ws
+      PUBLIC_COLLAB_URL: ${SERVICE_URL_CADDY}/collab
+    depends_on: [core]
+
+  core:
+    image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *kern-env
+      PORT: 4000
+      KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:-admin@kernaio.com}
+      KERN_ADMIN_PASSWORD: ${SERVICE_PASSWORD_ADMIN}
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+      valkey: { condition: service_started }
+      minio: { condition: service_started }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"], interval: 15s, timeout: 5s, retries: 10 }
+
+  core-worker:
+    image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
+    command: ["node", "dist/worker.js"]
+    restart: unless-stopped
+    environment: *kern-env
+    depends_on: { core: { condition: service_healthy } }
+
+  chat:
+    image: ghcr.io/kernaio/chat:${KERN_VERSION:-latest}
+    restart: unless-stopped
+    environment: { <<: *kern-env, PORT: 4100 }
+    depends_on: { core: { condition: service_healthy } }
+
+  mail:
+    image: ghcr.io/kernaio/mail:${KERN_VERSION:-latest}
+    restart: unless-stopped
+    environment: { <<: *kern-env, PORT: 4200 }
+    depends_on: { core: { condition: service_healthy } }
+
+  collab:
+    image: ghcr.io/kernaio/collab:${KERN_VERSION:-latest}
+    restart: unless-stopped
+    environment: { <<: *kern-env, PORT: 4300 }
+    depends_on: { core: { condition: service_healthy } }
+
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment: { POSTGRES_USER: kern, POSTGRES_PASSWORD: "${SERVICE_PASSWORD_POSTGRES}", POSTGRES_DB: kern }
+    volumes: ["pgdata:/var/lib/postgresql"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U kern"], interval: 5s, timeout: 5s, retries: 20 }
+
+  nats:
+    image: nats:2.11-alpine
+    restart: unless-stopped
+    command: ["-js", "--store_dir", "/data"]
+    volumes: ["natsdata:/data"]
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "60", "1000", "--appendonly", "no"]
+    volumes: ["valkeydata:/data"]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data
+    # Declaring the magic variable is what makes Coolify give MinIO its own domain and point the
+    # proxy at 9000. Set it to files.kernaio.com and leave that record DNS-only at Cloudflare.
+    environment:
+      - SERVICE_URL_MINIO_9000
+      - MINIO_ROOT_USER=kern
+      - MINIO_ROOT_PASSWORD=${SERVICE_PASSWORD_MINIO}
+    volumes: ["miniodata:/data"]
+
+  # Runs once and exits. Nothing creates the bucket at upload time, so files fail without it.
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "sleep 3; mc alias set local http://minio:9000 kern ${SERVICE_PASSWORD_MINIO} && mc mb -p local/kern || true"
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+
+volumes: { pgdata: {}, natsdata: {}, valkeydata: {}, miniodata: {} }

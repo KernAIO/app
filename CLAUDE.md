@@ -170,6 +170,14 @@ pnpm dev       # every service with hot reload
   real containers, plus `node dist/main.js` for `core` run against them. Re-measure before changing
   the numbers rather than adjusting them by feel; `core` is the largest Kern service, so it is the
   one worth measuring.
+- **There are now three copies of the stack, and `cloud/` is the third.** `selfhost/` is the bare
+  host, `selfhost/coolify/` is what a customer pastes into their own Coolify, and `cloud/` is the
+  instance we run at app.kernaio.com. It differs in exactly one thing: `S3_PUBLIC_ENDPOINT` points
+  at its own hostname, because Cloudflare's Free and Pro plans reject a request body over 100 MB
+  while `UPLOAD_MAX_PUT_BYTES` signs single-PUT URLs up to 500 MB — proxy the storage path and every
+  large upload dies as a 413 the browser reports as a network error. So MinIO gets `files.` on a
+  DNS-only record and the app keeps the CDN. `scripts/check-selfhost-drift.py` checks all three:
+  a copy may differ in a variable's *value*, never in the set of keys or the Caddy routes.
 - **`selfhost/coolify/` mounts nothing.** A Compose file pasted into Coolify has no files beside it,
   so the Caddy config is a heredoc inside the container's command and the Postgres init script is
   gone (core's first migration creates the extensions anyway). Keep the heredoc free of `$` —

@@ -40,26 +40,32 @@ jobs:
               exit 1 ;;
           esac
 
-      - name: The Coolify compose file parses and resolves
-        working-directory: selfhost/coolify
-        # Its variables come from Coolify, not from a .env, so `config` warns about every one of
+      - name: The Coolify and cloud compose files parse and resolve
+        # Their variables come from Coolify, not from a .env, so `config` warns about every one of
         # them being unset. That is the expected state here; only a parse failure matters.
         run: |
           set -euo pipefail
-          docker compose config >/dev/null
-          echo "✔ selfhost/coolify/docker-compose.yml"
+          for f in selfhost/coolify/docker-compose.yml cloud/docker-compose.yml; do
+            docker compose -f "$f" config >/dev/null
+            echo "✔ $f"
+          done
 
       - name: The Coolify stack is the same stack
         run: python3 scripts/check-selfhost-drift.py
 
-      - name: The Caddy config the Coolify stack writes is valid
-        # It is a heredoc inside a container command rather than a file, so nothing else would ever
-        # read it. Adapting it in the real image is the only way to find out that it is wrong.
+      - name: The Caddy configs the Coolify and cloud stacks write are valid
+        # Each is a heredoc inside a container command rather than a file, so nothing else would
+        # ever read it. Adapting it in the real image is the only way to find out that it is wrong.
         run: |
           set -euo pipefail
-          python3 scripts/check-selfhost-drift.py --emit-caddyfile /tmp/Caddyfile
-          docker run --rm -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine \
-            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          python3 scripts/check-selfhost-drift.py \
+            --emit-caddyfile /tmp/Caddyfile \
+            --emit-cloud-caddyfile /tmp/Caddyfile.cloud
+          for f in /tmp/Caddyfile /tmp/Caddyfile.cloud; do
+            docker run --rm -v "$f":/etc/caddy/Caddyfile:ro caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            echo "✔ $f"
+          done
 
       - name: The scripts parse
         working-directory: selfhost
