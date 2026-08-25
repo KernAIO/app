@@ -1,0 +1,140 @@
+name: Release
+# Cuts one platform version out of whatever landed on main since the last one.
+#
+# Kern releases as a single platform: every image and every module moves together under one
+# KERN_VERSION, so a release is not a per-repository act. This workflow tags the same version in
+# each service repository, waits for the images that produces, and then publishes the umbrella
+# release — which is what `release-feed.yml` signs a feed from and what rolls the cloud forward.
+#
+# It runs nightly because main moves all day. Batching a day's work into one version is what keeps
+# a version number meaningful: an admin on 0.4.0 knows exactly which module versions they have.
+# Releasing per push would produce a number per commit and tell them nothing.
+on:
+  schedule:
+    # 02:00 UTC — after the day's pushes, before anyone is looking.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to move'
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+      force:
+        description: 'Release even if no service repository changed'
+        required: false
+        default: false
+        type: boolean
+
+permissions: { contents: write }
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # The repositories that build an image. A release is defined by these; docs and website ship on
+  # their own and carry no KERN_VERSION.
+  SERVICES: core app chat mail collab
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Work out the previous version and the next one
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PREV=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName \
+                 --jq '.[0].tagName // empty' | sed 's/^v//')
+          PREV=${PREV:-0.0.0}
+          BUMP='${{ inputs.bump || 'patch' }}'
+          IFS=. read -r MA MI PA <<< "$PREV"
+          case "$BUMP" in
+            major) MA=$((MA+1)); MI=0; PA=0 ;;
+            minor) MI=$((MI+1)); PA=0 ;;
+            patch) PA=$((PA+1)) ;;
+          esac
+          echo "prev=$PREV"   >> "$GITHUB_OUTPUT"
+          echo "next=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
+          echo "Previous $PREV -> next $MA.$MI.$PA"
+
+      - name: Has anything actually shipped since then?
+        id: changed
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          PREV='${{ steps.v.outputs.prev }}'
+          CHANGED=false
+          for repo in $SERVICES; do
+            if [ "$PREV" = "0.0.0" ]; then CHANGED=true; break; fi
+            # Comparing the tag against main tells us whether that repository moved. A missing tag
+            # means the repository never took part in a release, which also counts as changed.
+            AHEAD=$(gh api "/repos/KernAIO/$repo/compare/v$PREV...main" --jq '.ahead_by' 2>/dev/null || echo "missing")
+            echo "$repo: $AHEAD commits ahead of v$PREV"
+            if [ "$AHEAD" = "missing" ] || [ "${AHEAD:-0}" -gt 0 ]; then CHANGED=true; fi
+          done
+          if [ "${{ inputs.force || false }}" = "true" ]; then CHANGED=true; fi
+          echo "value=$CHANGED" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to release
+        if: steps.changed.outputs.value != 'true'
+        run: echo "No service repository moved since v${{ steps.v.outputs.prev }} — stopping."
+
+      - name: Tag every service repository
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          V='v${{ steps.v.outputs.next }}'
+          for repo in $SERVICES; do
+            SHA=$(gh api "/repos/KernAIO/$repo/git/ref/heads/main" --jq '.object.sha')
+            gh api -X POST "/repos/KernAIO/$repo/git/refs" \
+              -f ref="refs/tags/$V" -f sha="$SHA" >/dev/null
+            echo "tagged KernAIO/$repo $V at ${SHA:0:8}"
+          done
+
+      - name: Wait for every image to exist
+        if: steps.changed.outputs.value == 'true'
+        run: |
+          set -euo pipefail
+          V='${{ steps.v.outputs.next }}'
+          # release-feed.mjs reads the published images to find out what modules a release contains,
+          # so the feed cannot be built until every one of them is pushed.
+          for repo in $SERVICES; do
+            echo "waiting for ghcr.io/kernaio/$repo:$V"
+            for i in $(seq 1 60); do
+              TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:kernaio/$repo:pull&service=ghcr.io" | jq -r .token)
+              if curl -fsSL -H "Authorization: Bearer $TOKEN" \
+                   -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                   "https://ghcr.io/v2/kernaio/$repo/manifests/$V" >/dev/null 2>&1; then
+                echo "  built"; break
+              fi
+              if [ "$i" = "60" ]; then
+                echo "::error::ghcr.io/kernaio/$repo:$V never appeared — check that repository's Docker workflow"
+                exit 1
+              fi
+              sleep 20
+            done
+          done
+
+      # Publishing the release is what triggers release-feed.yml, which signs the feed and then
+      # dispatches rollout.yml. Everything after this point is automatic.
+      - name: Publish the release
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V='v${{ steps.v.outputs.next }}'
+          gh release create "$V" \
+            --repo "${{ github.repository }}" \
+            --title "$V" \
+            --generate-notes

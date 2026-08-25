@@ -21,7 +21,8 @@ on:
         description: 'Oldest version that may upgrade straight to this one (blank for any)'
         required: false
 
-permissions: { contents: write, packages: read }
+# actions: write is what lets the last step dispatch rollout.yml in this same repository.
+permissions: { contents: write, packages: read, actions: write }
 concurrency:
   group: release-feed
   cancel-in-progress: false
@@ -85,8 +86,8 @@ jobs:
       - name: Tell the cloud to roll out
         if: vars.KERN_CLOUD_DISPATCH == 'true'
         env:
-          GH_TOKEN: ${{ secrets.KERN_CLOUD_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh workflow run rollout.yml \
-            --repo KernAIO/cloud \
+            --repo "${{ github.repository }}" \
             --field version="${{ steps.version.outputs.value }}"

@@ -1,0 +1,86 @@
+name: Cloud rollout
+# Moves app.kernaio.com onto a released version.
+#
+# The cloud runs the same images a self-hoster runs, pinned to the same KERN_VERSION the release
+# feed announces — so "what is cloud running" has the same answer as "what was released". This
+# workflow is the only thing that changes that pin.
+#
+# `release-feed.yml` calls it once a release's feed is signed, which is what keeps the two in step.
+# It is also `workflow_dispatch` on purpose: rolling forward to a version out of band, or rolling
+# back to an earlier one, is the same operation and should not need a release to hang off.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to roll out, without a leading v (e.g. 0.2.0)'
+        required: true
+
+permissions: { contents: read }
+concurrency:
+  group: cloud-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    # Without the variable there is no cloud to roll out to, which is the normal state of a fork.
+    if: vars.KERN_CLOUD_DISPATCH == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the release exists before touching the instance
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          # Rolling out a tag that was never built leaves the stack pulling an image that does not
+          # exist, and Coolify reports that as a failed deploy rather than as a bad version.
+          for image in app core chat mail collab; do
+            TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:kernaio/$image:pull&service=ghcr.io" | jq -r .token)
+            if ! curl -fsSL -H "Authorization: Bearer $TOKEN" \
+                 "https://ghcr.io/v2/kernaio/$image/manifests/$V" \
+                 -H 'Accept: application/vnd.oci.image.index.v1+json' >/dev/null 2>&1; then
+              echo "::error::ghcr.io/kernaio/$image:$V does not exist — was the release tagged?"
+              exit 1
+            fi
+            echo "ok: ghcr.io/kernaio/$image:$V"
+          done
+
+      - name: Pin KERN_VERSION
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          BODY=$(jq -nc --arg v '${{ inputs.version }}' '{key:"KERN_VERSION", value:$v, is_preview:false}')
+          # POST creates it the first time and 4xx's afterwards; PATCH updates an existing one.
+          curl -fsS -X POST "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY" \
+          || curl -fsS -X PATCH "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+          echo
+
+      - name: Deploy
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "$COOLIFY_URL/api/v1/deploy" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg u "$APP_UUID" '{uuid:$u, force:true}')"
+          echo
+
+      - name: Wait for the instance to report the version it was given
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          # /api/health reports KERN_VERSION as baked into the image, so this checks the rollout
+          # actually landed rather than that Coolify accepted the request.
+          for i in $(seq 1 40); do
+            GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
+            if [ "$GOT" = "$V" ]; then echo "app.kernaio.com is on $V"; exit 0; fi
+            echo "attempt $i: reported '${GOT:-unreachable}', want '$V'"
+            sleep 15
+          done
+          echo "::error::app.kernaio.com did not report $V within 10 minutes"
+          exit 1
