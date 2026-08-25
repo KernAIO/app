@@ -107,19 +107,29 @@ The diff is the proof. If you claimed a port, it appears in the Ports line and t
 has moved. If you added a repository, it has a row, and that row says where it is cloned — or says
 plainly that it is not cloned here.
 
-## 7. Every skill exists at two paths
+## 7. Every skill exists where a session can start
 
-A session may start in the umbrella or in the directory above it, so the skills have to load from
-both. They are not two copies: **the files are hardlinked**, one inode with two names. Editing
-either path edits both, which is why nobody has had to remember to copy anything.
+Three homes, one file each:
 
-Creating a *new* file is the exception — a new skill written in one tree stays invisible in the
-other until it is linked:
+| A session started by | Reads skills from |
+|---|---|
+| Claude Code in `kern/` | `kern/.claude/skills/` |
+| Claude Code in the workspace root | `.claude/skills/` — **symlinked** directories pointing at the copies above |
+| Hermes (any profile) | `$HERMES_HOME/skills/` and `$HERMES_HOME/profiles/<profile>/skills/` |
+
+The first pair are hardlinks inside shared directories and symlinked directories between them:
+one inode with several names, so editing either path edits all, which is why nobody has had to
+remember to copy anything. Creating a *new* file is the exception — a new skill written in one tree
+stays invisible in the others until it is linked:
 
 ```bash
 K=<workspace root>            # the directory that holds kern/
 mkdir -p $K/.claude/skills/<skill>
 ln $K/kern/.claude/skills/<skill>/SKILL.md $K/.claude/skills/<skill>/SKILL.md
+for p in ~/.hermes/skills ~/.hermes/profiles/kern-dev/skills \
+         ~/.hermes/profiles/kern-ops/skills ~/.hermes/profiles/kern-review/skills; do
+  mkdir -p $p && ln -sfn $K/kern/.claude/skills/<skill> $p/<skill>
+done
 ```
 
 Check it with `stat -f %i` on both paths: the same inode number means one file, and no drift. Copy

@@ -69,11 +69,25 @@ description: <what it covers, then the trigger — "Trigger when …">
   all" teaches more than a paragraph of principle.
 - Imperative and specific. No throat-clearing, no "it is important to".
 
-Then symlink it so the desktop working directory sees it too, the way the others are:
+Then link it everywhere a session can start from — the workspace root one level above `kern/`,
+and the home of every agent runtime that works on Kern — the way the others are:
 
 ```bash
-ln -s /Users/navid/Desktop/Kern/kern/.claude/skills/<name> /Users/navid/Desktop/Kern/.claude/skills/<name>
+K=<workspace root>   # the directory that holds kern/
+ln -sfn "$K/kern/.claude/skills/<name>" "$K/.claude/skills/<name>"
+for p in "$HOME/.hermes/skills" \
+         "$HOME/.hermes/profiles/kern-dev/skills" \
+         "$HOME/.hermes/profiles/kern-ops/skills" \
+         "$HOME/.hermes/profiles/kern-review/skills"; do
+  mkdir -p "$p"
+  ln -sfn "$K/kern/.claude/skills/<name>" "$p/<name>"
+done
 ```
+
+A Claude session reads `.claude/skills/`; a Hermes session reads only its own home
+(`~/.hermes/skills/`, or `~/.hermes/profiles/<name>/skills/`) and never sees `.claude/`. Without
+those links a new Hermes session starts from nothing again — the trap this skill exists to close.
+Symlinks, not copies: one file, edited once, true everywhere.
 
 ## 4. Audit what is already written
 
