@@ -65,6 +65,19 @@ Write it in the same commit as the change, in the publishing repo:
 cd repos/modules && pnpm changeset      # pick packages, pick bump, one honest sentence
 ```
 
+**Writing one is now optional, with one exception.** `publish.yml` infers a changeset from the
+commit when none was written — `feat:` a minor, everything else a patch, naming the packages whose
+directories the push touched. Write one by hand when the inferred summary would be a poor changelog
+entry, or when several packages move by different amounts.
+
+The exception is a **breaking change**. Whether an exported type changed shape is not visible in a
+commit subject, and publishing one as a patch is what a consumer's caret range then installs
+silently. A `!` subject or a `BREAKING CHANGE` trailer with no changeset fails CI *and* the publish,
+deliberately.
+
+```bash
+```
+
 The summary appears in the changelog people read. "fix bug" helps nobody; "reject an issue transition
 whose validator fails, instead of writing it and emitting the event" does.
 
@@ -141,9 +154,24 @@ see. If it is not, do not cut it — publish the packages and leave the tag.
 
 ### The tag, and the images
 
+**You do not tag by hand any more.** `release.yml` in the umbrella does it — nightly at 02:00 UTC,
+or on demand:
+
 ```bash
-git tag v0.2.0 && git push origin v0.2.0     # in each service repo that is part of the release
+gh workflow run release.yml --repo KernAIO/kern                    # bump read from the commits
+gh workflow run release.yml --repo KernAIO/kern --field bump=minor # override it
 ```
+
+It refuses to release a `main` whose CI is red, works the version out of the commit subjects
+(`feat:` is a minor, `!` or a `BREAKING CHANGE` trailer is a major, everything else a patch, and
+below 1.0.0 a major is demoted to a minor rather than declaring stability nobody meant), tags that
+one version across `core`, `app`, `chat`, `mail` and `collab`, waits for every image, and publishes
+the umbrella release. Everything after that is automatic: `release-feed.yml` signs the feed and
+dispatches `rollout.yml`, which pins `KERN_VERSION` in Coolify and waits for `/api/health` to report
+it back.
+
+Tagging one repository by hand produces an image nothing else knows about. If you need a version out
+of band, dispatch the workflow.
 
 `docker.yml` passes the tag in as the `KERN_VERSION` build arg, so the tag and the version the
 container reports are the same string. A service that passes `version:` to `createKernel` overrides

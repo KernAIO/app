@@ -242,7 +242,19 @@ pnpm dev       # every service with hot reload
   umbrella release. That fires `release-feed.yml`, which signs the feed and dispatches `rollout.yml`,
   which pins `KERN_VERSION` in Coolify and waits for `/api/health` to report it. Nothing in the chain
   needs a hand after `git push`, which is the point: main moves all day and the cloud moves once.
-  Tagging another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot.
+  Tagging another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot, and the
+  fine-grained PAT cannot see the umbrella — a step that touches both needs one token for each.
+- **Nothing picks a version number by hand any more, and nothing needs a changeset written by hand
+  except a breaking change.** `release.yml` reads the bump out of the commit subjects, so
+  Conventional Commits stopped being a style rule and became the input to the release; below 1.0.0 a
+  breaking change is demoted to a minor rather than declaring a stability nobody meant. `publish.yml`
+  infers a missing changeset the same way. The one thing neither will guess is a **major**: whether
+  an exported type changed shape is invisible in a subject line, and publishing that as a patch is
+  what a consumer's caret range installs silently — so a `!` or a `BREAKING CHANGE` trailer with no
+  changeset fails, in CI and at publish.
+- **Green is not shipped.** A push builds an image; it does not move the cloud. `app.kernaio.com`
+  has auto-deploy off on purpose — main moves all day and the cloud moves once, on a release. The
+  honest check for "is my change live" is `/api/health` reporting the version, not `git log`.
 - Release feed: `node scripts/release-feed.mjs --keygen` makes the ed25519 pair. The public half goes
   in core's `updates` service, the private half in the `KERN_FEED_PRIVATE_KEY` org secret. Until both
   exist, instances report "no signing key is configured" rather than claiming to be current.
