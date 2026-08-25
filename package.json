@@ -31,15 +31,22 @@
   },
   "pnpm": {
     "overrides": {
-      "better-auth": "1.7.1",
-      "@better-auth/core": "1.7.1",
       "@better-auth/api-key": "1.7.1",
+      "@better-auth/core": "1.7.1",
       "@better-auth/passkey": "1.7.1",
       "@better-auth/sso": "1.7.1",
       "@kernhq/contracts": "workspace:*",
       "@kernhq/kernel": "workspace:*",
+      "@kernhq/module-billing": "workspace:*",
+      "@kernhq/module-chat": "workspace:*",
+      "@kernhq/module-hr": "workspace:*",
+      "@kernhq/module-mail": "workspace:*",
+      "@kernhq/module-quire": "workspace:*",
+      "@kernhq/module-tracker": "workspace:*",
       "@kernhq/sdk": "workspace:*",
-      "@kernhq/ui": "workspace:*"
+      "@kernhq/ui": "workspace:*",
+      "@kernhq/workflow": "workspace:*",
+      "better-auth": "1.7.1"
     }
   }
 }
