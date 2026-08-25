@@ -35,7 +35,10 @@ concurrency:
 env:
   # The repositories that build an image. A release is defined by these; docs and website ship on
   # their own and carry no KERN_VERSION.
-  SERVICES: core app chat mail collab
+  # The repositories that build an image. `chat` and `mail` moved into the modules that need them
+  # (ADR 0008): the image is still called `chat`/`mail`, but it is built from `module-chat` and
+  # `module-mail`, so those are the repositories a release tags.
+  SERVICES: core app module-chat module-mail collab
 
 jobs:
   release:
@@ -160,17 +163,24 @@ jobs:
           V='${{ steps.v.outputs.next }}'
           # release-feed.mjs reads the published images to find out what modules a release contains,
           # so the feed cannot be built until every one of them is pushed.
+          # A repository and the image it builds are no longer the same name. `module-chat` builds
+          # `chat`, because the image is a deployment artefact every compose file already names and
+          # none of them should care which repository moved. Any module that ships a service follows
+          # the same rule, so this is a strip rather than a table to maintain.
+          image_for() { case "$1" in module-*) echo "${1#module-}";; *) echo "$1";; esac; }
+
           for repo in $SERVICES; do
-            echo "waiting for ghcr.io/kernaio/$repo:$V"
+            img=$(image_for "$repo")
+            echo "waiting for ghcr.io/kernaio/$img:$V  (built by $repo)"
             for i in $(seq 1 60); do
-              TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:kernaio/$repo:pull&service=ghcr.io" | jq -r .token)
+              TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:kernaio/$img:pull&service=ghcr.io" | jq -r .token)
               if curl -fsSL -H "Authorization: Bearer $TOKEN" \
                    -H 'Accept: application/vnd.oci.image.index.v1+json' \
-                   "https://ghcr.io/v2/kernaio/$repo/manifests/$V" >/dev/null 2>&1; then
+                   "https://ghcr.io/v2/kernaio/$img/manifests/$V" >/dev/null 2>&1; then
                 echo "  built"; break
               fi
               if [ "$i" = "60" ]; then
-                echo "::error::ghcr.io/kernaio/$repo:$V never appeared — check that repository's Docker workflow"
+                echo "::error::ghcr.io/kernaio/$img:$V never appeared — check $repo's Docker workflow"
                 exit 1
               fi
               sleep 20
