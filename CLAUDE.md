@@ -93,6 +93,19 @@ The repositories are **public**, so every commit is visible the moment it is pus
   again. When nothing answers `billing.entitlements.get`, every workspace is unlimited: that is what
   every self-hosted instance does on every request, so it is the default path and must not throw.
   See `docs/adr/0003-billing-entitlements-and-cloud.md`.
+- **Every module is its own repository, and `KernAIO/modules` is archived.** `module-tracker`,
+  `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing` and
+  `module-template` each hold one package with its own history, CI and release. The first-party six
+  are the ones Kern ships with and are meant to be read as much as run — a reference implementation
+  that lives somewhere structurally special is not a reference, so they have the same shape as one
+  written outside this organisation. `@kernhq/workflow` was never a module (Apache-2.0, depends only
+  on zod) and moved into the `kernel` repo with the rest of the framework.
+- **Range drift is now checked, because there is no single place left to fix it.** `check-ranges.mjs`
+  runs in every repo's `lint` and fails when a declared `@kernhq/*` range cannot install what is
+  published. A caret on 0.x never crosses a minor, so `^0.7.0` stops reaching the framework the
+  moment it becomes 0.8.0 — invisible locally, because the umbrella pins the workspace copies. This
+  broke CI twice on 2026-08-25 before the check existed, and the check found two more the first time
+  it ran.
 - **The module template is its own repository.** `KernAIO/module-template` is Apache-2.0 and
   published as `@kernhq/module-template`; it was a package inside the AGPL `modules` repo, which
   meant the only way to get the permissive starting point was to clone six copyleft modules with it.

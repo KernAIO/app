@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 
 TASK="${1:?usage: run-all.sh <task> [--parallel]}"
 MODE="${2:-}"
-ORDER=(kernel modules module-template core chat mail collab app docs)
+ORDER=(kernel module-tracker module-chat module-quire module-hr module-mail module-billing module-template core chat mail collab app docs)
 
 has_script() {
   node -e "const s=require('./repos/$1/package.json').scripts||{};process.exit(s['$TASK']?0:1)" 2>/dev/null
