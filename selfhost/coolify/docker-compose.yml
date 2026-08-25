@@ -149,7 +149,12 @@ services:
       nats: { condition: service_started }
       valkey: { condition: service_started }
       minio: { condition: service_started }
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"], interval: 15s, timeout: 5s, retries: 10 }
+    # No healthcheck override here. The image already carries one, and it is the only kind that
+    # can work: node:24-slim has neither wget nor curl, so a `wget` test can never run, and the
+    # service listens on IPv4 only, so `localhost` resolves to ::1 and is refused. The override
+    # that used to sit here failed on both counts, so core was permanently unhealthy — and
+    # core-worker, chat, mail and collab all wait on `condition: service_healthy`, so none of
+    # them ever started. The Dockerfile probes 127.0.0.1 with `node -e fetch(...)` instead.
 
   core-worker:
     image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}

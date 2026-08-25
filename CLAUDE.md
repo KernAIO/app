@@ -170,6 +170,14 @@ pnpm dev       # every service with hot reload
   real containers, plus `node dist/main.js` for `core` run against them. Re-measure before changing
   the numbers rather than adjusting them by feel; `core` is the largest Kern service, so it is the
   one worth measuring.
+- **Do not override a Kern service's healthcheck in Compose.** Every service image already carries
+  one, and it is the only shape that works: the images are `node:24-slim`, which has neither `wget`
+  nor `curl`, and the services listen on IPv4 only, so `localhost` resolves to `::1` and is refused.
+  All three compose files carried `test: ["CMD","wget","-qO-","http://localhost:4000/api/health"]`
+  for `core`, which failed on both counts — so `core` was permanently unhealthy, and `core-worker`,
+  `chat`, `mail` and `collab` all wait on `condition: service_healthy` and therefore never started.
+  A stack that looks like it booted with four services missing is this. The image probes
+  `127.0.0.1` with `node -e "fetch(...)"`; let it.
 - **There are now three copies of the stack, and `cloud/` is the third.** `selfhost/` is the bare
   host, `selfhost/coolify/` is what a customer pastes into their own Coolify, and `cloud/` is the
   instance we run at app.kernaio.com. It differs in exactly one thing: `S3_PUBLIC_ENDPOINT` points
