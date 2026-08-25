@@ -235,6 +235,14 @@ pnpm dev       # every service with hot reload
   into the tree. Two copies of the contracts then coexist, and `svelte-check` resolves the stale one
   while plain `tsc` resolves the linked one — so the app reports errors for procedures that exist,
   in files nobody touched. Plain `tsc` passing is not evidence here; `pnpm typecheck` is.
+- **A release is one act across six repositories, and `release.yml` here is the only thing that
+  performs it.** Nightly (or by hand) it tags one version in `core`, `app`, `chat`, `mail` and
+  `collab`, waits for each image to appear in GHCR — `release-feed.mjs` reads the images to find out
+  what modules a release contains, so the feed cannot be built before they exist — then publishes the
+  umbrella release. That fires `release-feed.yml`, which signs the feed and dispatches `rollout.yml`,
+  which pins `KERN_VERSION` in Coolify and waits for `/api/health` to report it. Nothing in the chain
+  needs a hand after `git push`, which is the point: main moves all day and the cloud moves once.
+  Tagging another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot.
 - Release feed: `node scripts/release-feed.mjs --keygen` makes the ed25519 pair. The public half goes
   in core's `updates` service, the private half in the `KERN_FEED_PRIVATE_KEY` org secret. Until both
   exist, instances report "no signing key is configured" rather than claiming to be current.
