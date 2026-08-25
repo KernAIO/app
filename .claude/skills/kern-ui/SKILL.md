@@ -157,10 +157,56 @@ A card on the workspace home is judged beside every other module's. Read the `ke
 before adding one — what it must not claim, why one configurable widget beats six fixed ones, and
 why the keyboard route is the specification rather than the afterthought.
 
-## 12. Verify by running it
+## 12. The machine checks half of this — run it
+
+`repos/app/tests/e2e/ux.spec.ts` sweeps **every route in four renderings** (light/dark ×
+LTR/RTL) against the rules in `ux-audit.ts`, and CI runs it:
+
+| rule | what fails |
+| --- | --- |
+| `contrast` | text under 4.5:1 (3:1 when large) against the colour actually behind it |
+| `name` | an interactive element a screen reader would announce with no name |
+| `target` | a control under 24×24 **and** within 24px of another — WCAG 2.5.8, spacing exception included |
+| `cursor` | a click target showing the arrow instead of the pointer |
+| `heading` | a page with no level-1 heading |
+| `overflow` | a document that scrolls sideways |
+| `focus` | a control the keyboard reaches with no visible ring |
+| — | anything the page throws while rendering |
+
+```bash
+cd repos/app && pnpm test:e2e -- ux.spec.ts     # needs a build; the config makes one
+```
+
+Three things about it are worth knowing before you argue with a failure.
+
+- **It measures the rendered page, not the source.** It reads the colour composited down through
+  every ancestor background, the real hit area (`elementFromPoint`, so a transparent `::after` that
+  grows a 15px button to 25px counts), and the ring a `:focus-within` ancestor draws for a child.
+- **It implements the standards as written**, including their exceptions — a small target with room
+  around it passes, a disabled control is exempt from contrast, an inline link in a sentence is
+  exempt from target size. So a failure is a defect, not a strict test to be loosened.
+- **A route it does not list is a route nobody checks.** Adding a screen means adding it to `ROUTES`.
+
+Everything it cannot judge — whether the copy is kind, whether the spacing has rhythm, whether the
+empty state suggests the right next thing — is still §1–11 above, and still yours.
+
+### The two defects you cannot see by looking
+
+**Contrast is arithmetic.** Compute the ratio against the surface the text sits on *and* the palest
+surface it could sit on (`--kern-canvas` in light, `--kern-surface-active` in dark). This is how the
+ink scale below 450 was found to run to 2.5:1, how six of nine avatar grounds turned out to carry
+white initials at 2.6–4.1:1, and how `.v-danger` was found putting `#fff` on a light red in dark
+mode — on the button that deletes a project.
+
+**`opacity` on a row fades its text against the page.** A "muted" or "disabled" row at 0.5 is
+unreadable whatever colour token it names, and opacity fades everything by the same proportion
+regardless of where it started. Mute with a colour (`--kern-ink-450`), and keep disabled states at
+0.7 — exempt from the contrast rule is not the same as unreadable.
+
+## 13. Verify by running it
 
 Type-checking is not verification. Run `pnpm dev:mock`, open the screen, exercise each action, and
 look at it in both themes — with screenshots if Chrome tooling is available. Then run
-`pnpm lint && pnpm typecheck && pnpm build && pnpm test`.
+`pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e`.
 
 State plainly in your report what you exercised and what you did not.

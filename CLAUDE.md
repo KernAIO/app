@@ -115,6 +115,19 @@ comments and commit messages keep the voice they have; user-facing strings belon
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.
 - UI follows `app/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
 - All user-facing strings go through i18n (Paraglide) — no hardcoded English in components.
+- **A screen that works is not finished; it has to be pleasant.** Kern is judged as a product, so
+  the things that read as amateur are defects here, not polish: text nobody can read in dark mode,
+  a blank browser tab, an icon button a screen reader calls "button", a control too small to hit, a
+  page that scrolls sideways in Persian. None of that fails a build or a type-check, so it is
+  guarded by a machine instead: `repos/app/tests/e2e/ux.spec.ts` sweeps **every route in four
+  renderings** — light and dark, LTR and RTL — against the rules in `ux-audit.ts`, and CI runs it.
+  It is the only check that looks at the *rendered* interface. Adding a route means adding it there.
+  What a machine cannot judge — whether the copy is kind, whether the layout has rhythm — is the
+  `kern-ui` skill's job, and it is still yours to check.
+- **Two of these defects are invisible from the source, so measure rather than eyeball.** A colour
+  pair's contrast is arithmetic, not taste: compute it against the surface the text actually sits on
+  and against the *palest* one it could sit on. And `opacity` on a row fades its text against the
+  page — a "muted" row at 0.5 is unreadable, whatever its colour token says. Mute with a colour.
 
 ## Keeping this file current
 This file is how the next person — or the next agent — avoids repeating what we already worked out.
