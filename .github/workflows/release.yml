@@ -16,11 +16,11 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Which part of the version to move'
+        description: 'Override the bump; auto reads it from the commits'
         required: true
-        default: patch
+        default: auto
         type: choice
-        options: [patch, minor, major]
+        options: [auto, patch, minor, major]
       force:
         description: 'Release even if no service repository changed'
         required: false
@@ -47,14 +47,44 @@ jobs:
       - name: Work out the previous version and the next one
         id: v
         env:
+          # GITHUB_TOKEN reads this repository's releases; it cannot read the service repositories.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The fine-grained PAT is the other way round — scoped to the service repositories only.
+          SERVICES_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           PREV=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName \
                  --jq '.[0].tagName // empty' | sed 's/^v//')
           PREV=${PREV:-0.0.0}
-          BUMP='${{ inputs.bump || 'patch' }}'
+          BUMP='${{ inputs.bump || 'auto' }}'
+
+          # Read the bump out of the commits rather than asking anyone. The repositories are held to
+          # Conventional Commits, so the information is already there: a `feat:` is a minor, a `!`
+          # or a BREAKING CHANGE trailer is a major, and everything else is a patch.
+          if [ "$BUMP" = "auto" ]; then
+            BUMP=patch
+            for repo in $SERVICES; do
+              if [ "$PREV" = "0.0.0" ]; then
+                LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" --jq '.[].commit.message')
+              else
+                LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/compare/v$PREV...main" --jq '.commits[].commit.message' 2>/dev/null || echo "")
+              fi
+              # A subject like `feat(core)!: ...`, or a BREAKING CHANGE trailer anywhere in the body.
+              if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:' || echo "$LOG" | grep -q 'BREAKING CHANGE'; then
+                BUMP=major; break
+              fi
+              if echo "$LOG" | grep -qE '^feat(\([^)]*\))?:'; then BUMP=minor; fi
+            done
+            echo "Commits since v$PREV say: $BUMP"
+          fi
+
           IFS=. read -r MA MI PA <<< "$PREV"
+          # Before 1.0.0 a breaking change is a minor, not a major. Without this the first `feat!:`
+          # would quietly declare Kern 1.0.0 — a statement about stability nobody meant to make.
+          if [ "$BUMP" = "major" ] && [ "$MA" = "0" ]; then
+            echo "0.x: treating the breaking change as a minor rather than declaring 1.0.0."
+            BUMP=minor
+          fi
           case "$BUMP" in
             major) MA=$((MA+1)); MI=0; PA=0 ;;
             minor) MI=$((MI+1)); PA=0 ;;
@@ -62,7 +92,7 @@ jobs:
           esac
           echo "prev=$PREV"   >> "$GITHUB_OUTPUT"
           echo "next=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
-          echo "Previous $PREV -> next $MA.$MI.$PA"
+          echo "Previous $PREV -> next $MA.$MI.$PA ($BUMP)"
 
       - name: Has anything actually shipped since then?
         id: changed
