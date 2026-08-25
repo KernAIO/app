@@ -93,17 +93,6 @@ The repositories are **public**, so every commit is visible the moment it is pus
   again. When nothing answers `billing.entitlements.get`, every workspace is unlimited: that is what
   every self-hosted instance does on every request, so it is the default path and must not throw.
   See `docs/adr/0003-billing-entitlements-and-cloud.md`.
-- **A module that needs its own process ships that process.** `src/service/` and a `Dockerfile`
-  beside the contract, the server half and the screens — that one directory is the whole difference
-  between a small module and a chat-like one, and it is optional. Without it, `core` hosts you. The
-  `chat` and `mail` *services* moved into `module-chat` and `module-mail` for this reason: their
-  integration tests lived in the service repo, so both modules published to npm with **zero tests**
-  and a green CI that proved nothing. A module that cannot test itself is not a module.
-  **The image keeps its old name** — `module-chat` builds `ghcr.io/kernaio/chat` — because compose
-  files, Coolify and the release feed all name it, and none of them should care which repository
-  moved. `release.yml` strips the `module-` prefix to find the image; `scripts/release-feed.mjs` and
-  `selfhost/` were already written against image names and needed no change.
-  See `repos/module-template/STRUCTURE.md`.
 - **Every module is its own repository, and `KernAIO/modules` is archived.** `module-tracker`,
   `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing` and
   `module-template` each hold one package with its own history, CI and release. The first-party six
