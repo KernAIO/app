@@ -174,6 +174,14 @@ pnpm dev       # every service with hot reload
   so the Caddy config is a heredoc inside the container's command and the Postgres init script is
   gone (core's first migration creates the extensions anyway). Keep the heredoc free of `$` —
   Compose interpolates the command string before the shell ever sees it.
+- **A `HEALTHCHECK` with no `--start-period` fails a Coolify deploy, on a container that works.**
+  Coolify gates a release on Docker's health status and polls it about ten times. Docker's default
+  interval is 30s and the first probe fires almost immediately — before the server has bound — so
+  every poll re-reads that same stale failure (identical `Start` timestamp in the log is the tell)
+  and the release is rolled back. Give every image `--interval=10s --start-period=15s`.
+  And probe **127.0.0.1, not localhost**: `nginx.conf` replacing nginx's `default.conf` means
+  `10-listen-on-ipv6-by-default.sh` never patches it, so nginx is IPv4-only while busybox wget
+  tries `::1` first and is refused. Same trap as the CI note above, one layer down.
 - **Caddy behind another proxy rewrites `X-Forwarded-Proto` to `http` and replaces the client IP**
   unless the proxy in front is trusted. On Coolify that turns every request into one the services
   believe arrived unencrypted. `servers { trusted_proxies static private_ranges }` in the global
