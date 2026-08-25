@@ -87,6 +87,28 @@ jobs:
         if: steps.changed.outputs.value != 'true'
         run: echo "No service repository moved since v${{ steps.v.outputs.prev }} — stopping."
 
+      - name: Refuse to release a red main
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Images are built by docker.yml, which runs whether or not ci.yml passed — so without
+          # this, a main that fails lint or tests still becomes a release and rolls onto the cloud
+          # unattended. The nightly is only safe because CI is the gate; check that it actually is.
+          RED=""
+          for repo in $SERVICES; do
+            SHA=$(gh api "/repos/KernAIO/$repo/git/ref/heads/main" --jq '.object.sha')
+            CONCLUSION=$(gh api "/repos/KernAIO/$repo/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0].conclusion // "missing"')
+            echo "$repo @ ${SHA:0:8}: $CONCLUSION"
+            if [ "$CONCLUSION" != "success" ]; then RED="$RED $repo($CONCLUSION)"; fi
+          done
+          if [ -n "$RED" ]; then
+            echo "::error::Not releasing —$RED. Fix main, or dispatch this workflow again once CI is green."
+            exit 1
+          fi
+
       - name: Tag every service repository
         if: steps.changed.outputs.value == 'true'
         env:
