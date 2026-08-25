@@ -1,0 +1,94 @@
+name: Publish
+on:
+  push: { branches: [main] }
+permissions: { contents: write, id-token: write }
+concurrency:
+  # queue rather than cancel: a cancelled release can leave a version commit unpushed
+  group: "publish-${{ github.ref }}"
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      # No registry-url: it writes an .npmrc with a placeholder token, and npm answers a bad token
+      # with 404 — so every public package appears to vanish at install.
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+      - run: pnpm build
+
+      - name: Write a changeset when the commit did not
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # A package that moves without a changeset never reaches the registry: the push is green,
+          # `changeset version` finds nothing, and the fix stays here. The commit already says what
+          # happened — this repository is held to Conventional Commits — so infer it rather than
+          # making someone write it twice.
+          if [ -n "$(find .changeset -name '*.md' ! -name 'README.md' -print -quit)" ]; then
+            echo "Changeset already written by hand — leaving it alone."; exit 0
+          fi
+          if [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No comparable base commit — nothing to infer from."; exit 0
+          fi
+
+          # Anything that ships. Docs, CI and the changeset directory move without a release.
+          CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" \
+            | grep -vE '^(\.github/|\.changeset/|README\.md|CHANGELOG\.md|CLA\.md|SECURITY\.md|CODE_OF_CONDUCT\.md|CONTRIBUTING\.md)' || true)
+          if [ -z "$CHANGED" ]; then echo "Nothing publishable changed."; exit 0; fi
+
+          LOG=$(git log --format=%B "$BEFORE..$GITHUB_SHA")
+          # The one judgement a machine must not make. Whether an exported type changed shape is not
+          # visible in a commit subject, and guessing publishes a breaking change as a patch — which
+          # a caret range then installs silently.
+          if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:' || echo "$LOG" | grep -q 'BREAKING CHANGE'; then
+            echo "::error::This push declares a breaking change but carries no changeset. Write one with 'pnpm changeset' and say what breaks and how."
+            exit 1
+          fi
+          BUMP=patch
+          if echo "$LOG" | grep -qE '^feat(\([^)]*\))?:'; then BUMP=minor; fi
+
+          NAME=$(node -p "require('./package.json').name")
+          FILE=".changeset/auto-${GITHUB_SHA:0:8}.md"
+          { echo "---"; echo "'$NAME': $BUMP"; echo "---"; echo; git log -1 --format=%s "$GITHUB_SHA"; } > "$FILE"
+          echo "Wrote $FILE:"; cat "$FILE"
+
+      # Version and publish straight from `main` rather than through a release pull request: the
+      # organisation does not let Actions open pull requests, and a release PR would be a formality
+      # for a repository whose changesets are written alongside the change anyway.
+      - name: Release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN is not set, so nothing can be published."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Runs queue rather than cancel, so a second push can start from a checkout that predates
+          # the previous run's version commit — and then try to publish a version that already
+          # exists. Take whatever landed while we waited.
+          git pull --rebase origin "$GITHUB_REF_NAME"
+
+          # Bump only when something asked to be bumped. `changeset publish` still runs either way:
+          # it compares against the registry, which is what gets a package that has never been
+          # released out for the first time.
+          if [ -n "$(find .changeset -name '*.md' ! -name 'README.md' -print -quit)" ]; then
+            pnpm changeset version
+            if [ -f pnpm-lock.yaml ]; then pnpm install --lockfile-only; fi
+            git add -A
+            git commit -m "chore: version package"
+          else
+            echo "No changesets to apply; publishing whatever the registry is missing."
+          fi
+
+          npm config set "//registry.npmjs.org/:_authToken=$NPM_TOKEN"
+          pnpm changeset publish
+          git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
