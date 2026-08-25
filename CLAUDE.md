@@ -16,6 +16,12 @@ The repositories are **public**, so every commit is visible the moment it is pus
   only permissive dependencies. If a module author has to import an AGPL package to get something
   done, move the API — never the licence. See `LICENSING.md` and
   `docs/adr/0005-licensing-and-the-module-boundary.md`.
+- **A permissive licence nobody can reach is not a permissive licence.** `@kernhq/module-template`
+  carried `private: true` for months, so the only way to get the Apache-2.0 template was to clone an
+  AGPL repository containing six AGPL modules. It is published now. Anything on the Apache side a
+  third party is *meant to start from* has to be installable, not merely licensed — check that before
+  calling the boundary done. `@kernhq/workflow` is the open question: published, Apache-2.0, and
+  nothing depends on it.
 
 ## Git
 - Author identity: `Navid Mirzaaghazadeh <mirzaaghazadeh@icloud.com>` (already set in each repo's local git config — plain `git commit` is correct; do not override with `-c`).

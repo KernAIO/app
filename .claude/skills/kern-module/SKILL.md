@@ -40,6 +40,13 @@ cd repos/modules
 pnpm new-module <id>          # scripts/new-module.mjs
 ```
 
+**`@kernhq/module-template` is published, and that is the whole point of it.** It was `private: true`
+until 2026-08-25, which meant the Apache-2.0 half of the licensing split could only be got by cloning
+an AGPL-3.0 repository — the promise in ADR 0005 was real in the licence header and unreachable in
+practice. Somebody outside this organisation starts from the published package; `pnpm new-module`
+is the shortcut for people who already have the workspace. Both must produce the same module, so a
+change to one is a change to both.
+
 It copies `_template`, rewrites every `template` identifier, drops `private`, and — inside the
 umbrella workspace, where `repos/app` sits beside it — writes the app half's `permissions.ts`,
 `api.ts` and `mock.ts` too. It prints what is left. Do not hand-copy `_template`: the generator exists

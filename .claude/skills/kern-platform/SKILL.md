@@ -84,7 +84,7 @@ which is right.
 
 ```bash
 cd repos/modules/packages
-ls -d */                                             # _template billing chat mail tracker workflow
+ls -d */                                             # _template billing chat hr mail quire tracker workflow
 grep -rln "<the old thing>" --include='*.ts' . | grep -v node_modules
 grep -rn "<the old thing>" ../../{core,chat,mail,collab}/src ../../app/src 2>/dev/null
 ```
@@ -95,7 +95,10 @@ need it. Then the hosts — `repos/core/src/service.ts` and the other services' 
 
 - [ ] contracts + kernel implementation + the code that consumes the declaration
 - [ ] `@kernhq/contracts` / `@kernhq/kernel` released; ranges bumped in `_template` and every module
-- [ ] `_template` shows the new shape
+- [ ] `_template` shows the new shape — and is **released**, not just edited: it is a published
+      package now (`@kernhq/module-template`), and it is what a third party outside this
+      organisation copies. A template a release left behind teaches the old shape to everyone
+      who starts after it.
 - [ ] `new-module.mjs` generates it, both halves
 - [ ] every existing module updated, or a stated reason
 - [ ] host services and the app registry
