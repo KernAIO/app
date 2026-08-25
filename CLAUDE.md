@@ -9,7 +9,8 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Keep commit history clean and meaningful — it is part of what people judge the project by.
 - Every repo carries LICENSE, CLA.md, CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md.
 - **Two licences, split at the framework boundary.** The `kernel` repo and `modules`'
-  `_template` + `workflow` are **Apache-2.0** so anyone can write a closed module; the product —
+  `workflow` are **Apache-2.0**, as is `KernAIO/module-template` in its own repository, so anyone can
+  write a closed module; the product —
   `app`, `core`, `chat`, `mail`, `collab`, `docs`, this umbrella, the first-party modules — is
   **AGPL-3.0-only**. A new package inherits its repo's licence unless it is something a third-party
   module must import, and then it is Apache-2.0 with its own LICENSE file. Apache-2.0 packages take
@@ -20,8 +21,9 @@ The repositories are **public**, so every commit is visible the moment it is pus
   carried `private: true` for months, so the only way to get the Apache-2.0 template was to clone an
   AGPL repository containing six AGPL modules. It is published now. Anything on the Apache side a
   third party is *meant to start from* has to be installable, not merely licensed — check that before
-  calling the boundary done. `@kernhq/workflow` is the open question: published, Apache-2.0, and
-  nothing depends on it.
+  calling the boundary done. `@kernhq/workflow` is the other Apache-2.0 package here and it is
+  genuinely used — `module-tracker` imports it for workflow definitions, approval state and status
+  categories.
 
 ## Git
 - Author identity: `Navid Mirzaaghazadeh <mirzaaghazadeh@icloud.com>` (already set in each repo's local git config — plain `git commit` is correct; do not override with `-c`).
