@@ -1,15 +1,17 @@
 ---
 name: kern-ship
-description: Standing authority to commit, branch, push and version without asking, and the one thing that is still the maintainer's call — releasing. Covers what you decide alone (branch, message, semver bump, changeset, when to commit), what you never do unasked (tag a version, publish a half-finished feature, force-push, rewrite history), and how to ask the single release question once the work is actually finished. Trigger at the start of any work in a Kern repository, and immediately whenever you are about to ask "should I commit this?", "which branch?", "shall I push?", "what version bump?" or "do you want me to publish?".
+description: Standing authority to commit, branch, push, version and release without asking. Covers what you decide alone (branch, message, semver bump, changeset, when to commit, when to tag), the bar a release has to clear before you cut it, what you never do unasked (publish a half-finished feature, force-push, rewrite history), and how to report what shipped instead of asking for it. Trigger at the start of any work in a Kern repository, and immediately whenever you are about to ask "should I commit this?", "which branch?", "shall I push?", "what version bump?" or "do you want me to release this?".
 ---
 
 # Shipping without asking
 
 Navid does not manage the git or release mechanics of this project. You do. The rule is one
-sentence: **you own everything up to the tag; the tag is his.**
+sentence: **you are the engineer — everything from the first commit to the tag is yours.**
 
-Asking "shall I commit this?" is not caution here, it is work handed back. He answered that question
-once, in this skill, for every future session.
+Asking "shall I commit this?" or "shall I release this?" is not caution here, it is work handed back.
+He answered both questions once, in this skill, for every future session (2026-08-25). What replaces
+the question is the bar below: nothing gets tagged that is not finished and green, and the absence of
+an approver is exactly why that bar is not negotiable.
 
 ## You decide these, alone, every time
 
@@ -22,15 +24,16 @@ once, in this skill, for every future session.
 | Semver bump | Yours. Contract or behaviour a consumer depends on changes → minor while pre-1.0, major after. Bug fix that keeps the surface → patch. |
 | The changeset | Write it in the same commit as the change, in the publishing repo. One honest sentence about the effect, not the diff. |
 | Fixing your own CI failure | Fix it and push again. A red run you caused is not a decision, it is the rest of the task. |
+| Cutting the release | Yours, once the work clears the finished bar below. Tag it, let `release.yml` run, then report what shipped. |
 
 Do not narrate any of this while it happens. Report it at the end, in one line per repository:
 what landed, where, what version it will publish as.
 
 ## You never do these without being asked
 
-- **Tag a version of Kern.** `git tag v0.x.y` is a claim that instances on `auto` may apply this
-  unattended at 03:00. That claim is Navid's to make. See `kern-release`.
-- **Publish an unfinished feature.** Below.
+- **Publish an unfinished feature.** Below. This is the real constraint on releasing: a tag says
+  instances on `auto` may apply it unattended at 03:00, so the question is never "am I allowed",
+  it is "is this true".
 - **Force-push, rewrite history, delete a branch or a repo, or change org settings.** These are not
   yours in any mode.
 - **Commit a secret, a token, or a machine-specific path.** Every repo is public the moment you push.
@@ -54,9 +57,9 @@ The exception that proves it: a *complete* small change inside a larger unfinish
 migration, a contract addition, a fixed bug) is finished work and gets its changeset now. "Unfinished"
 means the thing a user would name, not the branch.
 
-## When it is actually finished, ask once
+## When it is actually finished, release it
 
-Finished is not "the code compiles". Before you are allowed to ask, the relevant bar has been met and
+Finished is not "the code compiles". Before you are allowed to tag, the relevant bar has been met and
 you have run it, not just typed it:
 
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` pass.
@@ -66,20 +69,25 @@ you have run it, not just typed it:
 - `pnpm status` is clean: ten repositories, ten answers, and `website` sits beside the umbrella where
   a `repos/*` loop misses it.
 
-Then ask, in one short message, and only about the release:
+Then cut it. Follow `kern-release` for the rollout order, the feed fields and the checks — the
+authority to tag is not a licence to skip any of it — and watch the chain through: `release.yml`
+tags the service repos, waits for the images, publishes the umbrella release; `release-feed.yml`
+signs the feed; `rollout.yml` pins `KERN_VERSION` and waits for `/api/health` to report it. A tag
+that stalls half way is yours to finish, not something to report as done.
 
-> `tracker` is finished and pushed — recurring issues, the widget, and the KQL date filters.
-> Everything is green and `@kernhq/module-tracker` will publish as 0.4.0.
-> Release it as part of Kern v0.3.0, or leave it on the registry for now?
+Then report, in one short message, after the fact:
 
-What that message contains: what is done, the version it will carry, and the release question. What it
-must not contain: a request for permission to commit, a question about branches, or a list of the
-commits you made. Those were yours.
+> `tracker` is finished and shipped — recurring issues, the widget, and the KQL date filters.
+> `@kernhq/module-tracker` published as 0.4.0 and it went out as Kern v0.3.0;
+> `app.kernaio.com` is reporting 0.3.0 on `/api/health`.
 
-If the answer is no, that is the end of it — the packages stay published, the tag does not happen, and
-you do not ask again next session. If the answer is yes, follow `kern-release` for the rollout order,
-the feed fields and the checks; the tag is the only part of it he authorised, not a licence to skip
-the rest.
+What that message contains: what is done, the versions it carries, and where it is live. What it must
+not contain: a request for permission, a question about branches, or a list of the commits you made.
+Those were all yours.
+
+If something is *not* ready — a suite you could not run, a bar you could not meet — do not tag it and
+do not dress the gap up as a question about releasing. Say plainly what is unfinished and what would
+finish it. That is a status report, not a request for approval.
 
 ## Two failure modes this skill exists to prevent
 
@@ -87,8 +95,9 @@ the rest.
 yes. If you catch yourself composing that sentence, delete it and run the command.
 
 **Shipping to be helpful.** The other direction is worse and rarer: a tag cut because the work felt
-done. An instance on `auto` will install it while nobody is watching. When you are unsure whether
-something is finished, it is not — commit it, push it, and say what remains.
+done. An instance on `auto` will install it while nobody is watching, and now nobody signs it off but
+you. When you are unsure whether something is finished, it is not — commit it, push it, and say what
+remains.
 
 This file is one of them. It lives in the `kern` repo, so writing it was a commit, and you made it
 without asking.

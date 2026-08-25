@@ -36,9 +36,11 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `git status --porcelain` first and stage from it; if you cannot name every path you are about to
   commit, you are not ready to commit. When it does happen, do not revert the other agent's files —
   they are still working on them; tell them instead, and repair what you broke.
-- **Never ask permission to commit, branch, push, or pick a version bump** — those are yours, every
-  time, and asking hands the work back. The only thing that is still the maintainer's call is cutting
-  a release, and you ask that once, after the work is finished and green. See the `kern-ship` skill.
+- **Never ask permission to commit, branch, push, pick a version bump, or cut a release** — all of
+  it is yours, every time, and asking hands the work back. Release when the work is actually finished
+  and green, then report what shipped; the bar for "finished" does not move because nobody is
+  approving it. The only things still off-limits unasked are force-push, rewriting history, deleting
+  a branch or repo, and changing org settings. See the `kern-ship` skill.
 
 ## Layout & workflow
 - Umbrella dev workspace: `kern/` with sibling repos cloned under `kern/repos/<name>` (gitignored there). pnpm links all `@kernhq/*` packages via the umbrella workspace.
