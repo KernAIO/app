@@ -35,7 +35,7 @@ concurrency:
 env:
   # The repositories that build an image. A release is defined by these; docs and website ship on
   # their own and carry no KERN_VERSION.
-  SERVICES: core app chat mail collab
+  SERVICES: core shell chat mail collab
 
 jobs:
   release:

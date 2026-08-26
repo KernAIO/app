@@ -64,7 +64,7 @@ if (!['none', 'additive', 'breaking'].includes(schemaChanges))
   throw new Error(`--schema takes none, additive or breaking, not "${schemaChanges}"`)
 const minPreviousVersion = value('min-previous', null)
 const requiredEnv = (value('required-env', '') || '').split(',').map((s) => s.trim()).filter(Boolean)
-const services = (value('services', 'app,core,chat,mail,collab') || '').split(',').filter(Boolean)
+const services = (value('services', 'shell,core,chat,mail,collab') || '').split(',').filter(Boolean)
 
 /**
  * Ask a published image what it contains. `/api/health` is the same answer the running service
@@ -99,7 +99,7 @@ function modulesIn(service) {
     )
     return JSON.parse(stdout.trim()).modules ?? {}
   } catch {
-    // a service with no modules of its own (app, collab) has no manifest to print
+    // a service with no modules of its own (shell, collab) has no manifest to print
     return {}
   }
 }
