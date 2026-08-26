@@ -178,6 +178,12 @@ strings in the app go through Paraglide and belong to `kern-language` — includ
 reads on screen. Error *messages a developer reads*, and what an API is allowed to say, belong to
 `kern-service`.
 
+This skill governs how a document is *built*. What it is allowed to *claim* — the voice, the words
+Kern never uses, the positioning and boilerplate, the spelling of every name — is
+`KernAIO/brand`'s [`docs/voice.md`](https://github.com/KernAIO/brand/blob/main/docs/voice.md),
+checked out at `../brand` beside this workspace. Read it before writing anything persuasive: a
+landing page, a release note, a README's opening, an error a user reads.
+
 ## 12. Before you call it written
 
 - The goal is in the first sentence, and the requirements are complete enough to decide to start.

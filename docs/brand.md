@@ -7,6 +7,10 @@ is **[KernAIO/brand](https://github.com/KernAIO/brand)**. Send people there. Thi
 working note for the geometry, because the generators that rebuild the mark live in this
 workspace, not in that repository.
 
+The verbal half of the brand is there too: **[`docs/voice.md`](https://github.com/KernAIO/brand/blob/main/docs/voice.md)**
+holds the voice, the claims Kern is allowed to make about itself, the positioning and boilerplate,
+and the spelling of every name. Website copy, this README and a release note all answer to it.
+
 ```
 assets/kern-mark.svg         ink square, paper K         the default
 assets/kern-mark-dark.svg    paper square, ink K         on a dark ground
