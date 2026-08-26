@@ -102,6 +102,12 @@ The repositories are **public**, so every commit is visible the moment it is pus
   with a `do $$ … end $$` catalogue check must not have a `--> statement-breakpoint` inserted into
   its dollar-quoted body, and `ALTER TABLE … ADD PRIMARY KEY` needs a name and a
   `drop constraint if exists` like any other constraint.
+  When a migration is wrong, **regenerate it from the drizzle schema rather than patching the SQL by
+  hand** — that is what puts a composite primary key inline in `CREATE TABLE IF NOT EXISTS`, where it
+  inherits the guard, instead of emitting the unguarded `ALTER TABLE … ADD PRIMARY KEY` that a hand
+  patch produces. `mod_inventory.counters` avoided repeating its own defect this way and only by
+  luck: the fix for "multiple primary keys are not allowed" would otherwise have shipped as a second
+  unguarded primary key on the same table.
 - **Idempotent is not the same as effective, and the second one has no guard.** A replayed
   `create table if not exists` reports success and changes nothing, so a *rewritten* migration
   silently leaves an existing schema exactly as it was — the boot failure is gone and the change
