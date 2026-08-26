@@ -124,6 +124,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   new-module` and `npx degit KernAIO/module-template` produce the same module by construction. It is
   cloned into `repos/` and linked, so a platform change that breaks the template breaks it here
   first — which is what `kern-platform`'s checklist depends on.
+- **The realtime socket exists at `welcome`, not at `onopen`.** A client sends `hello` and its
+  `sub` back to back, so both frames arrive in one read and are dispatched while the gateway is
+  still awaiting core for the principal — and a gateway that closes anything arriving before
+  authentication rejects a *valid* session, at a rate set by network timing rather than by anything
+  in the code. The client answered that by reconnecting, and because it reset its backoff on
+  `onopen` it reconnected about twice a second, so the app wore a flashing "Reconnecting…" banner
+  for ten to twenty seconds on every load until a lucky read arrived. Both halves are fixed
+  (`chat/src/gateway.ts` holds pre-auth messages, `@kernhq/sdk` waits for `welcome`); the rule
+  behind them is that an accepted TCP socket is not an authenticated session, so nothing may be
+  sent, counted or reported as connected until the server says so.
 - Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
   allocation, the next free number, and the map of every repository are generated —
   `node .claude/skills/kern-repos/scripts/sync.mjs`, then read the `kern-repos` skill.
