@@ -38,6 +38,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `git status --porcelain` first and stage from it; if you cannot name every path you are about to
   commit, you are not ready to commit. When it does happen, do not revert the other agent's files —
   they are still working on them; tell them instead, and repair what you broke.
+- **`git checkout --` and `git restore` are as destructive as `git add -A`, and in the same way.**
+  They act on a *path*, not on an author, so undoing your own edit to a file throws away whatever
+  else is in it. On 2026-08-26 a range sweep over-bumped some versions and undid itself with
+  `for d in repos/*/; do (cd $d && git checkout -- package.json); done` — fifteen repositories at
+  once, without looking at any of them first. It discarded another session's uncommitted
+  `exports["./contract"]` repoint and its new `pg` devDependencies, and only that one session lost
+  work because the other fourteen files happened to be clean. Undo by re-editing the specific keys
+  you changed. If you must discard, run `git status --porcelain` first and stop when the file is
+  dirty for a reason that is not yours — the same sentence as the `git add -A` rule above, and it is
+  the same mistake pointed the other way.
 - **Never ask permission to commit, branch, push, pick a version bump, or cut a release** — all of
   it is yours, every time, and asking hands the work back. Release when the work is actually finished
   and green, then report what shipped; the bar for "finished" does not move because nobody is
@@ -87,6 +97,18 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `ltree` and `vector`, and `btree_gist` is not among them: a module reaching for a gist exclusion
   constraint declares the extension itself. Verify a migration on a scratch database created from
   nothing.
+- **A module migration that is not idempotent takes down every module in the host service.** The
+  kernel migrates each module at boot, so one that throws does not degrade its own feature — `core`
+  hosts five and never binds :4000. `create policy` has no `if not exists`, so **no** module's
+  `0001_rls.sql` can be re-run today; inventory is only the one that got caught, because
+  regenerating `migrations/meta/_journal.json` gives every entry a `when` newer than the rows in
+  `mod_<id>.__migrations` and drizzle therefore replays files that have already been applied. Put a
+  `drop policy if exists` before every `create policy` and a `drop constraint if exists` before
+  every `add constraint`, and prove it by applying the whole folder **twice in a row** to one
+  database. Note the second half of the trap: a replay of `0000_init.sql` is all `create … if not
+  exists`, so it reports success and adds nothing — an old schema stays old, silently. A rewritten
+  migration needs `drop schema mod_<id> cascade` on every existing database, and after the first
+  tagged release it is not an option at all.
 - **Two column-level `.primaryKey()` calls are not a composite key.** Drizzle emits `PRIMARY KEY` on
   both columns and Postgres refuses the table — "multiple primary keys for table are not allowed",
   SQLSTATE 42P16. Because a module's migration is the first thing the kernel runs, the symptom is
