@@ -54,6 +54,17 @@ The repositories are **public**, so every commit is visible the moment it is pus
   installs. A module's manifest version comes from `packageVersion(import.meta.url)`, never a literal
   — the literals drifted for months and every admin was shown the wrong version. See
   `docs/adr/0002-platform-versioning-and-updates.md`.
+- **`@kernhq/kernel` and `@kernhq/contracts` are `peerDependencies` of every module, not
+  `dependencies`.** A plain dependency lets npm hand a module whatever kernel copy the host resolves,
+  even one the module was never built against — the range existed but nothing read it. As a peer, an
+  incompatible combination fails `pnpm install` in a host service (`core`, `chat`, `mail`, each with
+  `strict-peer-dependencies=true` in its own `.npmrc`) instead of installing silently. `pnpm.overrides`
+  still forces one resolved kernel copy per process — that is a different job (no two kernel
+  instances) from the peer check (is the one instance right for what depends on it), and both are
+  still needed. This is also what makes `renovate.json`'s existing `@kernhq/*` automerge safe to lean
+  on: a module version bump merges the day it is compatible with the kernel already pinned, and stays
+  red — not silently wrong — until the kernel catches up. See
+  `docs/adr/0009-independent-kernel-and-module-release-cadence.md`.
 - **Every migration must leave the database readable by the image before it.** Add nullable columns
   and new tables; drop and rename one release later. This is what makes rolling an image back work
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
