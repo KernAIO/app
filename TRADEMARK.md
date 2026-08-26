@@ -27,20 +27,6 @@ come with a right to use the name — and nothing here takes away any right the 
 - Use the mark as your own product's logo, or a modified version of it as any logo.
 - Suggest that KernAIO endorses, supports or certifies you when we have not.
 
-## If you want to sell hosted Kern
-
-You may — the AGPL permits it and we are not going to stop you. Publish your modifications and run it
-under your own name.
-
-If you would rather use ours, that is the **Kern Certified Host** programme:
-
-- You may say "Kern Certified Host", use the mark, and be listed on kernaio.com.
-- You get early access to releases and a support escalation path.
-- You keep your instance current with a supported version, and you pass on security releases.
-- You pay a revenue share.
-
-Write to <legal@kernaio.com>. We would rather have partners than lookalikes.
-
 ## Forks
 
 Fork freely. Change the product name, the visible branding and the domain. Keep the copyright and

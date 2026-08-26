@@ -52,10 +52,9 @@ us nothing and you do not need our permission.
 use it over a network, the AGPL requires you to publish those changes under the AGPL. That is the
 whole of the obligation.
 
-**Sell it.** You may run Kern as a paid service for other people. The AGPL permits this and we are not
-going to pretend otherwise. Two conditions apply: publish your modifications, and do not call it Kern
-— see [TRADEMARK.md](TRADEMARK.md). If you want to use the name, there is a way to do that, and it is
-in the same file.
+**Run it for other people.** The licences govern the code, not what you may charge for running it.
+Two conditions apply when you operate Kern for others: publish your modifications under the AGPL, and
+do not call it Kern — see [TRADEMARK.md](TRADEMARK.md).
 
 **Write modules for it.** Yours, private, commercial, closed — all fine. See below.
 
