@@ -26,6 +26,14 @@ jobs:
     if: vars.KERN_CLOUD_DISPATCH == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Record what is live now, in case this needs to roll back
+        id: before
+        run: |
+          set -euo pipefail
+          GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
+          echo "version=$GOT" >> "$GITHUB_OUTPUT"
+          echo "Currently live: ${GOT:-unreachable}"
+
       - name: Check the release exists before touching the instance
         run: |
           set -euo pipefail
@@ -71,6 +79,8 @@ jobs:
           echo
 
       - name: Wait for the instance to report the version it was given
+        id: wait
+        continue-on-error: true # a failure here rolls back below rather than just leaving CI red
         run: |
           set -euo pipefail
           V='${{ inputs.version }}'
@@ -83,4 +93,70 @@ jobs:
             sleep 15
           done
           echo "::error::app.kernaio.com did not report $V within 10 minutes"
+          exit 1
+
+      # There is no traffic-split canary here — one Coolify application, one instance, so a new
+      # version goes live for everyone the moment it reports its version. What this buys instead:
+      # a version that reports healthy once and then falls over within a few minutes does not stay
+      # live. This is a health/reachability regression check, not an error-rate one — nothing in
+      # this stack exports a request error rate to check yet.
+      - name: Verify it stays healthy, not just that it reported once
+        id: verify
+        if: steps.wait.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          for i in $(seq 1 20); do
+            CODE=$(curl -fsS --max-time 10 -o /tmp/health.json -w '%{http_code}' https://app.kernaio.com/api/health || echo 000)
+            GOT=$(jq -r '.version // empty' /tmp/health.json 2>/dev/null || true)
+            if [ "$CODE" != "200" ] || [ "$GOT" != "$V" ]; then
+              echo "::error::regression during verification: http=$CODE version=${GOT:-none}, want 200/$V"
+              exit 1
+            fi
+            echo "check $i/20: healthy on $V"
+            sleep 15
+          done
+
+      - name: Roll back to what was live before, if the rollout or the verification failed
+        if: steps.wait.outcome == 'failure' || steps.verify.outcome == 'failure'
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          PREV='${{ steps.before.outputs.version }}'
+          if [ -z "$PREV" ]; then
+            echo "::error::rollout failed and there was no reachable previous version to roll back to — this needs a person, now"
+            exit 1
+          fi
+          if [ "$PREV" = "$V" ]; then
+            echo "::error::rollout of $V failed, but $V was also what was live before it — rolling back to it would do nothing. This needs a person, now"
+            exit 1
+          fi
+          echo "::warning::rolling app.kernaio.com back to $PREV"
+
+          BODY=$(jq -nc --arg v "$PREV" '{key:"KERN_VERSION", value:$v, is_preview:false}')
+          curl -fsS -X POST "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY" \
+          || curl -fsS -X PATCH "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+          echo
+          curl -fsS -X POST "$COOLIFY_URL/api/v1/deploy" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg u "$APP_UUID" '{uuid:$u, force:true}')"
+          echo
+
+          for i in $(seq 1 40); do
+            GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
+            if [ "$GOT" = "$PREV" ]; then
+              echo "::error::rolled back to $PREV after $V failed to stay healthy"
+              exit 1 # still fail the run — a rollback happened, and that is news, not success
+            fi
+            echo "rollback attempt $i: reported '${GOT:-unreachable}', want '$PREV'"
+            sleep 15
+          done
+          echo "::error::rollback to $PREV did not land within 10 minutes either — this needs a person, now"
           exit 1
