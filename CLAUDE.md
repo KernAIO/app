@@ -56,9 +56,17 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `docs/adr/0002-platform-versioning-and-updates.md`.
 - **`@kernhq/kernel` and `@kernhq/contracts` are `peerDependencies` of every module, not
   `dependencies`.** A plain dependency lets npm hand a module whatever kernel copy the host resolves,
-  even one the module was never built against — the range existed but nothing read it. As a peer, an
-  incompatible combination fails `pnpm install` in a host service (`core`, `chat`, `mail`, each with
-  `strict-peer-dependencies=true` in its own `.npmrc`) instead of installing silently. `pnpm.overrides`
+  even one the module was never built against — the range existed but nothing read it. Declaring it a
+  peer is what makes that combination *stateable*; it does not make anything check it. **pnpm does
+  not enforce it, and we assumed for months that it did.** A clean registry install of `chat`'s
+  manifest outside the workspace resolved `@kernhq/module-chat@0.4.8`, whose contracts peer is
+  `^0.6.1`, against `contracts@0.5.2` — exit 0, no warning — in a repository setting
+  `strict-peer-dependencies=true`, because `auto-install-peers=true` satisfies the peer from whatever
+  the host already asked for. So the check lives in `check-ranges.mjs`: it reads the published peers
+  of every `@kernhq/module-*` a package depends on and holds the package's own ranges to them. It
+  reports *who is behind* — a module still peering last month's contracts is the thing to republish,
+  never the host to move down, because a host installs one copy and lowering it drags every other
+  module with it. `pnpm.overrides`
   still forces one resolved kernel copy per process — that is a different job (no two kernel
   instances) from the peer check (is the one instance right for what depends on it), and both are
   still needed. This is also what makes `renovate.json`'s existing `@kernhq/*` automerge safe to lean
@@ -69,6 +77,22 @@ The repositories are **public**, so every commit is visible the moment it is pus
   and new tables; drop and rename one release later. This is what makes rolling an image back work
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
   purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
+- **A migration that has only ever run against your dev database has not been tested.**
+  `module-inventory`'s `0001_rls.sql` copied HR's custody exclusion constraint
+  (`exclude using gist (asset_id with =, tstzrange(...) with &&)`) without HR's
+  `CREATE EXTENSION IF NOT EXISTS btree_gist`. On any clean database that fails with "data type uuid
+  has no default operator class for access method gist" — and it fails during the module's own
+  migration, so the *service does not start*. It was invisible because every database it had ever
+  run against already had the extension. Core's `0000_init.sql` creates `pg_trgm`, `pgcrypto`,
+  `ltree` and `vector`, and `btree_gist` is not among them: a module reaching for a gist exclusion
+  constraint declares the extension itself. Verify a migration on a scratch database created from
+  nothing.
+- **Two column-level `.primaryKey()` calls are not a composite key.** Drizzle emits `PRIMARY KEY` on
+  both columns and Postgres refuses the table — "multiple primary keys for table are not allowed",
+  SQLSTATE 42P16. Because a module's migration is the first thing the kernel runs, the symptom is
+  not a broken table but a host service that will not boot: `core` never binds :4000 and everything
+  that talks to it is down. Use `primaryKey({ columns: [...] })` in the table's second argument.
+  `mod_inventory.counters` had this.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
 - **A module ships its own screens, and `shell` ships only the shell.** Contract, server, pages,
   widgets, strings and manifest are one package; deleting it removes the feature completely. The
@@ -80,6 +104,21 @@ The repositories are **public**, so every commit is visible the moment it is pus
   all three shipped: importing `$app/state`, importing your own barrel, and a local called `t`
   shadowing the message function. Each module package type-checks its own client — that is the only
   thing that sees them. See `docs/adr/0008-a-module-ships-its-own-screens.md`.
+- **A local named after a rune deletes the rune.** `const state = $derived(query.data)` and then
+  `let busy = $state(false)` in the same file: Svelte reads the second `$state` as a store
+  subscription to the first, and `svelte-check` says "Cannot use 'state' as a store", which sounds
+  like a store problem and is not. Same shape as the `t` shadowing above — `state`, `props`,
+  `derived` and `effect` are all names worth avoiding for a local in a component.
+- **`disabled={mutation.isPending}` does not stop the second click.** The attribute reaches the
+  button on the next render, and two quick clicks are one render apart — so a double-click on
+  *clock in* files two punches, and on an approval files two decisions. Set a plain `$state` flag in
+  the same tick as the click, guard on it before calling `mutate`, and clear it in `onSettled`.
+- **Disabling the control somebody is standing on throws their focus to `<body>`.** The browser
+  blurs a focused element the moment it becomes disabled and hands focus nowhere; nothing gives it
+  back, so a keyboard user who toggles a switch loses their place on the page and has to tab from
+  the top. Measured on the capabilities switchboard, on every toggle. Where a control must not be
+  pressed twice, guard the handler rather than disabling the control — `aria-busy` says the same
+  thing to a screen reader without moving anything.
 - **A module is the coarse switch; a capability is the one below it.** A module different customers
   want *different amounts* of declares capabilities — named sub-features with dependencies that a
   workspace switches, off for everyone rather than for one person. A disabled one answers **404, not
@@ -97,26 +136,44 @@ The repositories are **public**, so every commit is visible the moment it is pus
   CI resolved 0.2.x while every local build used 0.5.0. When you widen a contract, grep for the
   places that *construct* the type, and bump the consumer's range in the same change — green CI on
   a stale range is not evidence.
-- **An entitlement key without an enforcement site is a lie.** `kernel.entitlements` declares what a
-  plan may limit — seats, storage, modules, SSO, audit retention, API rate — and each key has exactly
-  one place in core that checks it. Plan *values* are data an admin edits; the key set is not. Adding
-  a key means adding its enforcement in the same commit, or the pricing page starts promising things
-  again. When nothing answers `billing.entitlements.get`, every workspace is unlimited: that is what
-  every self-hosted instance does on every request, so it is the default path and must not throw.
+- **A capability, a permission key and an entitlement key are all lies until something enforces
+  them.** `kernel.entitlements` declares what a plan may limit — seats, storage, modules, SSO, audit
+  retention, API rate — and each key has exactly one place in core that checks it. Plan *values* are
+  data an admin edits; the key set is not. Adding a key means adding its enforcement in the same
+  commit, or the pricing page starts promising things again. When nothing answers
+  `billing.entitlements.get`, every workspace is unlimited: that is what every self-hosted instance
+  does on every request, so it is the default path and must not throw.
+  A capability nothing checks `requiresCapability` for, and a permission key no procedure asks
+  about, fail the same way and for the same reason: a switchboard full of switches that change
+  nothing teaches an administrator that the switchboard does not mean anything. Declare each of the
+  three in the change that puts something behind it — `module-inventory` declares one capability,
+  `core`, and adds none of the rest until something sits behind it.
   See `docs/adr/0003-billing-entitlements-and-cloud.md`.
 - **Every module is its own repository, and `KernAIO/modules` is archived.** `module-tracker`,
-  `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing` and
-  `module-template` each hold one package with its own history, CI and release. The first-party six
-  are the ones Kern ships with and are meant to be read as much as run — a reference implementation
-  that lives somewhere structurally special is not a reference, so they have the same shape as one
-  written outside this organisation. `@kernhq/workflow` was never a module (Apache-2.0, depends only
-  on zod) and moved into the `kernel` repo with the rest of the framework.
+  `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing`, `module-inventory`
+  and `module-template` each hold one package with its own history, CI and release. The first-party
+  seven are the ones Kern ships with and are meant to be read as much as run — a reference
+  implementation that lives somewhere structurally special is not a reference, so they have the same
+  shape as one written outside this organisation. `@kernhq/workflow` was never a module
+  (Apache-2.0, depends only on zod) and moved into the `kernel` repo with the rest of the framework.
 - **Range drift is now checked, because there is no single place left to fix it.** `check-ranges.mjs`
-  runs in every repo's `lint` and fails when a declared `@kernhq/*` range cannot install what is
-  published. A caret on 0.x never crosses a minor, so `^0.7.0` stops reaching the framework the
-  moment it becomes 0.8.0 — invisible locally, because the umbrella pins the workspace copies. This
-  broke CI twice on 2026-08-25 before the check existed, and the check found two more the first time
-  it ran.
+  runs in the `lint` of every repository that depends on `@kernhq/*` — all fourteen; it ran in eight
+  of them until 2026-08-26, and `chat`, `collab`, `core`, `mail`, `shell` and `module-template` were
+  the six where a range could drift unseen. It asks four questions, and they fail in four different
+  places: can the range reach what is published (a caret on 0.x never crosses a minor, so `^0.7.0`
+  stops reaching the framework the moment it becomes 0.8.0 — invisible locally, because the umbrella
+  pins the workspace copies); is there anything published for it to install at all (a floor raised
+  *past* the registry used to pass and then die at `ERR_PNPM_NO_MATCHING_VERSION`); does the
+  committed lockfile still agree with the manifest; and do the modules this package hosts agree with
+  the framework it declares. This broke CI twice on 2026-08-25 before the check existed, and the
+  check found two more the first time it ran.
+- **Taking that advice is what breaks the lockfile, so the two go in one commit.** Editing a range in
+  a repository that commits a `pnpm-lock.yaml` leaves it out of date with itself, and
+  `--frozen-lockfile` compares *specifiers*, not resolved versions — so the next publish dies at
+  install having built nothing, even though the tree did not change. On 2026-08-26 eight of the nine
+  lockfile-committing repositories were in exactly that state at once and four module publishes had
+  failed on it, each one caused by the range fix that preceded it. `check-ranges.mjs` checks the
+  lockfile now, so the fix cannot cause the next failure.
 - **The module template is its own repository.** `KernAIO/module-template` is Apache-2.0 and
   published as `@kernhq/module-template`; it was a package inside the AGPL `modules` repo, which
   meant the only way to get the permissive starting point was to clone six copyleft modules with it.
@@ -156,12 +213,16 @@ Mailpit for `mail`. Things learned the hard way:
   `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
   cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
   `pnpm install --lockfile-only` there, then copy the lockfile back.
-- **Only `kernel` and `modules` commit a lockfile; `core`, `chat`, `mail`, `shell` and `docs` do not.**
-  Their CI is `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo
-  without one resolves fresh from its ranges every run and a repo with one fails at *install* the
-  moment its lockfile drifts — before a single test. Check which kind you are in before adding a
-  dependency; assuming from one repo's behaviour is how a publish job dies at
-  ERR_PNPM_OUTDATED_LOCKFILE having built nothing.
+- **Nine repositories commit a lockfile: `kernel` and all eight `module-*`. The services do not** —
+  `core`, `chat`, `mail`, `collab`, `shell` and `docs` have none. Their CI is
+  `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo without one
+  resolves fresh from its ranges every run and a repo with one fails at *install* the moment its
+  lockfile drifts — before a single test. Check which kind you are in before adding a dependency or
+  editing a range; assuming from one repo's behaviour is how a publish job dies at
+  ERR_PNPM_OUTDATED_LOCKFILE having built nothing. `pnpm lint` says so now, but the refresh still
+  cannot be done from inside the umbrella: copy `package.json`, `pnpm-lock.yaml` and `.npmrc` to a
+  directory outside the workspace, run `pnpm install --lockfile-only` there, and copy the lockfile
+  back.
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
 
