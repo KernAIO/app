@@ -24,7 +24,7 @@ build when it goes stale, so the discipline has to be yours.
 | A trap that will cost the next agent an hour | that repo's `CLAUDE.md`, same commit | `kern-improve` |
 | How Kern itself gets built | a skill under `.claude/skills/` | `kern-improve` |
 | What a release changed | the changeset, then the release feed | `kern-release` |
-| A string a user sees in the product | `repos/app/messages/*.json` | `kern-language` |
+| A string a user sees in the product | `repos/shell/messages/*.json` | `kern-language` |
 | Marketing copy, pricing, the landing page | `website` | — |
 
 The common mistake is an operator guide inside a README. A README answers "what is this and how do

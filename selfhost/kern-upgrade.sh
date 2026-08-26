@@ -20,7 +20,7 @@ cd "$DIR"
 
 SNAPSHOT_DIR="${KERN_SNAPSHOT_DIR:-$DIR/snapshots}"
 KEEP_SNAPSHOTS="${KERN_KEEP_SNAPSHOTS:-5}"
-FEED_URL="${KERN_FEED_URL:-https://github.com/KernAIO/kern/releases/latest/download/releases.json}"
+FEED_URL="${KERN_FEED_URL:-https://github.com/KernAIO/app/releases/latest/download/releases.json}"
 
 step()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 info()  { printf '    %s\n' "$1"; }

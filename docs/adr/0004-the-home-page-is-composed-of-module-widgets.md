@@ -47,7 +47,7 @@ page.
 
 **4. Geometry is a pure module, and `items` is repaired on every read.**
 
-`repos/app/src/lib/dashboard/grid.ts` holds collision, compaction, move, resize and the responsive
+`repos/shell/src/lib/dashboard/grid.ts` holds collision, compaction, move, resize and the responsive
 projection, with no Svelte, no DOM and no `$msg` — a module that imports the message catalogue
 cannot be unit-tested, and a dashboard breaks in its arithmetic far more often than in its markup.
 The stored layout is always twelve columns; six and one are projections computed at render and never

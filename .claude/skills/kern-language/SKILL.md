@@ -1,6 +1,6 @@
 ---
 name: kern-language
-description: How Kern speaks more than one language — writing message keys, translating so the result reads as the target language rather than as English in disguise, plurals and digits through Intl, adding a locale, and the check that stops a gap reaching a user. Trigger whenever adding or changing a user-facing string, translating, adding a language, or reviewing anything under repos/app/messages.
+description: How Kern speaks more than one language — writing message keys, translating so the result reads as the target language rather than as English in disguise, plurals and digits through Intl, adding a locale, and the check that stops a gap reaching a user. Trigger whenever adding or changing a user-facing string, translating, adding a language, or reviewing anything under repos/shell/messages.
 ---
 
 # Kern's languages

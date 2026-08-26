@@ -22,9 +22,9 @@ for r in app core chat mail collab kernel modules docs; do
   printf '%-8s ' "$r"; gh run list -R "KernAIO/$r" --limit 1 --json conclusion,workflowName \
     --jq '.[] | "\(.workflowName): \(.conclusion)"'
 done
-gh issue list --repo KernAIO/kern --limit 30
+gh issue list --repo KernAIO/app --limit 30
 ls repos/modules/packages                               # which modules exist at all
-grep -n "registerModule" repos/app/src/lib/modules/registry.ts   # which are reachable in the UI
+grep -n "registerModule" repos/shell/src/lib/modules/registry.ts   # which are reachable in the UI
 ```
 
 The gap between "a package exists" and "it is registered in the app" is where this project's unfinished

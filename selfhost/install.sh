@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Kern self-host installer: creates .env with generated secrets, then starts the stack.
-#   curl -fsSL https://raw.githubusercontent.com/KernAIO/kern/main/selfhost/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh | bash
 set -euo pipefail
 DIR="${KERN_DIR:-$HOME/kern}"
-RAW="https://raw.githubusercontent.com/KernAIO/kern/main/selfhost"
+RAW="https://raw.githubusercontent.com/KernAIO/app/main/selfhost"
 mkdir -p "$DIR/postgres-init" && cd "$DIR"
 mkdir -p "$DIR/systemd"
 for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql \

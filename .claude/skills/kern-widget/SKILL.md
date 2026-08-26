@@ -1,6 +1,6 @@
 ---
 name: kern-widget
-description: How a module puts a card on the workspace dashboard — naming the procedure before designing the card, one configurable widget instead of six fixed ones, acting on a row rather than linking away from it, declaring sizes and surviving all of them, and keyboard parity for anything the pointer can do. Trigger when adding a widget to a module, when a module ships a feature somebody would want on their home page, or when reviewing anything under `repos/app/src/lib/dashboard` or a module's `widgets/`.
+description: How a module puts a card on the workspace dashboard — naming the procedure before designing the card, one configurable widget instead of six fixed ones, acting on a row rather than linking away from it, declaring sizes and surviving all of them, and keyboard parity for anything the pointer can do. Trigger when adding a widget to a module, when a module ships a feature somebody would want on their home page, or when reviewing anything under `repos/shell/src/lib/dashboard` or a module's `widgets/`.
 ---
 
 # Putting a module on the dashboard

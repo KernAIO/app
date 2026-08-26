@@ -10,7 +10,7 @@ Open source. Self-hosted. Yours.</p>
 <p align="center">
 <a href="LICENSING.md"><img alt="Licence" src="https://img.shields.io/badge/licence-AGPL--3.0%20%2B%20Apache--2.0-blue?style=flat-square"></a>
 <a href="#what-works-today"><img alt="Status" src="https://img.shields.io/badge/status-pre--1.0-orange?style=flat-square"></a>
-<a href="https://github.com/KernAIO/kern/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/KernAIO/kern?style=flat-square"></a>
+<a href="https://github.com/KernAIO/app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/KernAIO/app?style=flat-square"></a>
 <a href="https://www.npmjs.com/org/kernhq"><img alt="npm" src="https://img.shields.io/npm/v/@kernhq/kernel?style=flat-square&label=%40kernhq%2Fkernel"></a>
 <a href="https://docs.kernaio.com"><img alt="Docs" src="https://img.shields.io/badge/docs-docs.kernaio.com-1f2328?style=flat-square"></a>
 </p>
@@ -65,7 +65,7 @@ The published images are `amd64`, so an arm64 server needs images built for it. 
 ### 1. Run the installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KernAIO/kern/main/selfhost/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh | bash
 ```
 
 The installer asks for your domain, an admin email address and an admin password. It writes them to
@@ -114,14 +114,14 @@ You need:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/KernAIO/kern
-cd kern
+git clone https://github.com/KernAIO/app
+cd app
 pnpm setup
 ```
 
 `pnpm setup` clones every Kern repository into `repos/` and installs all dependencies at once.
 
-**Expected result:** `repos/` contains `app`, `core`, `chat`, `mail`, `collab`, `kernel`, `modules`
+**Expected result:** `repos/` contains `shell`, `core`, `chat`, `mail`, `collab`, `kernel`, `modules`
 and `docs`.
 
 ### 2. Start the infrastructure
@@ -149,7 +149,7 @@ migrate by hand.
 ### Work on the interface without any of that
 
 ```bash
-cd repos/app
+cd repos/shell
 pnpm dev:mock
 ```
 
@@ -180,8 +180,8 @@ you can build a module, you can build a feature that sits beside ours as an equa
 
 | Repository | What it is |
 |---|---|
-| [`kern`](https://github.com/KernAIO/kern) | This one: how to install Kern, the documentation, and the workspace that links the rest |
-| [`app`](https://github.com/KernAIO/app) | Every screen people use |
+| [`app`](https://github.com/KernAIO/app) | This one: how to install Kern, the documentation, and the workspace that links the rest |
+| [`shell`](https://github.com/KernAIO/shell) | Every screen people use |
 | [`core`](https://github.com/KernAIO/core) | Accounts, workspaces, roles, permissions, notifications, files and search |
 | [`chat`](https://github.com/KernAIO/chat) | Conversations, and the connection that keeps everything live |
 | [`mail`](https://github.com/KernAIO/mail) | Email leaving Kern, and replies coming back |

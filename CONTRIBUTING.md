@@ -10,7 +10,7 @@ Thanks for your interest in Kern — an open-source, self-hostable all-in-one wo
 
 ## Development setup
 ```bash
-git clone https://github.com/KernAIO/kern && cd kern
+git clone https://github.com/KernAIO/app && cd app
 pnpm setup      # clones all repos into ./repos and installs (pnpm links @kernhq/*)
 pnpm infra      # Postgres 18 · NATS · Valkey · MinIO · Mailpit (docker compose)
 pnpm dev        # runs app + services with hot reload

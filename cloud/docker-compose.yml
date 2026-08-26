@@ -110,7 +110,7 @@ services:
     depends_on: [app, core]
 
   app:
-    image: ghcr.io/kernaio/app:${KERN_VERSION:-latest}
+    image: ghcr.io/kernaio/shell:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment:
       <<: *kern-env

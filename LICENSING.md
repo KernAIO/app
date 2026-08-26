@@ -30,13 +30,13 @@ packages in `modules`:
 
 | Repository | What it is |
 |---|---|
-| [`app`](https://github.com/KernAIO/app) | The web application |
+| [`shell`](https://github.com/KernAIO/shell) | The web application |
 | [`core`](https://github.com/KernAIO/core) | Accounts, workspaces, permissions, module host |
 | [`chat`](https://github.com/KernAIO/chat) | Chat service |
 | [`mail`](https://github.com/KernAIO/mail) | Mail service |
 | [`collab`](https://github.com/KernAIO/collab) | Collaborative editing service |
 | [`docs`](https://github.com/KernAIO/docs) | Documentation site |
-| [`kern`](https://github.com/KernAIO/kern) | This repository — self-host distribution, docs, ADRs |
+| [`app`](https://github.com/KernAIO/app) | This repository — self-host distribution, docs, ADRs |
 | `@kernhq/module-tracker`, `@kernhq/module-chat`, `@kernhq/module-mail`, `@kernhq/module-billing` | The first-party modules |
 
 Each repository's `LICENSE` file is authoritative. Where a package inside a repository differs from

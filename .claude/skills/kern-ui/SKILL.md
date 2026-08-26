@@ -59,7 +59,7 @@ optimistically (a switch), it must snap back when the user cancels.
 
 - Every user-facing string goes through Paraglide. No hardcoded English — including toasts, aria
   labels, tooltips, placeholders and confirmation copy.
-- Add keys to **all** locale files under `repos/app/messages/`. Write English and Persian properly; if
+- Add keys to **all** locale files under `repos/shell/messages/`. Write English and Persian properly; if
   you cannot write Arabic or German, say so in your report rather than leaving them silently English.
 - Layout uses logical properties (`ms-`, `me-`, `start`, `end`). Never `left`/`right`. Verify with
   `dir="rtl"`.
@@ -68,7 +68,7 @@ optimistically (a switch), it must snap back when the user cancels.
 
 ## 7. Design fidelity
 
-`repos/app/DESIGN.md` is the authority: exact tokens, sizes, and per-view anatomy. Use tokens that
+`repos/shell/DESIGN.md` is the authority: exact tokens, sizes, and per-view anatomy. Use tokens that
 exist (`repos/kernel/packages/ui/src/lib/styles/tokens.css`) — an invented name resolves to nothing and fails
 silently. Check a component's real props before using it; several differ from the obvious guess.
 
@@ -80,7 +80,7 @@ not the build, not the types, not the tests. After touching CSS, run:
 ```bash
 # every token a file references, minus every token that is defined — the difference is your bugs
 comm -23 \
-  <(grep -rhoE 'var\(--kern-[a-z0-9-]+' repos/app/src repos/kernel/packages/ui/src | sed 's/var(//' | sort -u) \
+  <(grep -rhoE 'var\(--kern-[a-z0-9-]+' repos/shell/src repos/kernel/packages/ui/src | sed 's/var(//' | sort -u) \
   <(grep -hoE '^\s+--kern-[a-z0-9-]+' repos/kernel/packages/ui/src/lib/styles/*.css | tr -d ' ' | sed 's/:$//' | sort -u)
 ```
 
@@ -159,7 +159,7 @@ why the keyboard route is the specification rather than the afterthought.
 
 ## 12. The machine checks half of this — run it
 
-`repos/app/tests/e2e/ux.spec.ts` sweeps **every route in four renderings** (light/dark ×
+`repos/shell/tests/e2e/ux.spec.ts` sweeps **every route in four renderings** (light/dark ×
 LTR/RTL) against the rules in `ux-audit.ts`, and CI runs it:
 
 | rule | what fails |
@@ -174,7 +174,7 @@ LTR/RTL) against the rules in `ux-audit.ts`, and CI runs it:
 | — | anything the page throws while rendering |
 
 ```bash
-cd repos/app && pnpm test:e2e -- ux.spec.ts     # needs a build; the config makes one
+cd repos/shell && pnpm test:e2e -- ux.spec.ts     # needs a build; the config makes one
 ```
 
 Three things about it are worth knowing before you argue with a failure.

@@ -158,8 +158,8 @@ see. If it is not, do not cut it — publish the packages and leave the tag.
 or on demand:
 
 ```bash
-gh workflow run release.yml --repo KernAIO/kern                    # bump read from the commits
-gh workflow run release.yml --repo KernAIO/kern --field bump=minor # override it
+gh workflow run release.yml --repo KernAIO/app                    # bump read from the commits
+gh workflow run release.yml --repo KernAIO/app --field bump=minor # override it
 ```
 
 It refuses to release a `main` whose CI is red, works the version out of the commit subjects

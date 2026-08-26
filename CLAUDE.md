@@ -11,7 +11,7 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - **Two licences, split at the framework boundary.** The `kernel` repo and `modules`'
   `workflow` are **Apache-2.0**, as is `KernAIO/module-template` in its own repository, so anyone can
   write a closed module; the product —
-  `app`, `core`, `chat`, `mail`, `collab`, `docs`, this umbrella, the first-party modules — is
+  `shell`, `core`, `chat`, `mail`, `collab`, `docs`, this umbrella, the first-party modules — is
   **AGPL-3.0-only**. A new package inherits its repo's licence unless it is something a third-party
   module must import, and then it is Apache-2.0 with its own LICENSE file. Apache-2.0 packages take
   only permissive dependencies. If a module author has to import an AGPL package to get something
@@ -45,8 +45,8 @@ The repositories are **public**, so every commit is visible the moment it is pus
   a branch or repo, and changing org settings. See the `kern-ship` skill.
 
 ## Layout & workflow
-- Umbrella dev workspace: `kern/` with sibling repos cloned under `kern/repos/<name>` (gitignored there). pnpm links all `@kernhq/*` packages via the umbrella workspace.
-- Install dependencies ONLY via `kern/scripts/pnpm-install-locked.sh` (serialises pnpm at the umbrella root).
+- Umbrella dev workspace: `app/` with sibling repos cloned under `app/repos/<name>` (gitignored there). pnpm links all `@kernhq/*` packages via the umbrella workspace.
+- Install dependencies ONLY via `app/scripts/pnpm-install-locked.sh` (serialises pnpm at the umbrella root).
 - Node 24 (`nvm use 24`), pnpm 10, TypeScript ~5.9, ESM/NodeNext, Biome for lint+format (run `pnpm exec biome check --write <paths>` before committing), Vitest.
 - Contracts first: changes to `@kernhq/contracts` / module contracts land (and build) before their consumers.
 - **One version for the platform.** Every image and every module in an instance carries the same
@@ -70,13 +70,13 @@ The repositories are **public**, so every commit is visible the moment it is pus
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
   purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
-- **A module ships its own screens, and the app ships only the shell.** Contract, server, pages,
+- **A module ships its own screens, and `shell` ships only the shell.** Contract, server, pages,
   widgets, strings and manifest are one package; deleting it removes the feature completely. The
-  wiring outside it is two lines — `featureModules` in a host service, `registerModule` in the app's
-  registry. A module cannot import the app, so everything its screens need comes from `@kernhq/ui`:
+  wiring outside it is two lines — `featureModules` in a host service, `registerModule` in shell's
+  registry. A module cannot import `shell`, so everything its screens need comes from `@kernhq/ui`:
   **stateless things are exported** (`t`, formatters, query keys, components, charts) and **stateful
   things are read from a singleton the shell fills** (`session`, `navigation`, `getHost`). Three
-  mistakes compile while you edit inside the app and fail the moment the package builds alone, and
+  mistakes compile while you edit inside `shell` and fail the moment the package builds alone, and
   all three shipped: importing `$app/state`, importing your own barrel, and a local called `t`
   shadowing the message function. Each module package type-checks its own client — that is the only
   thing that sees them. See `docs/adr/0008-a-module-ships-its-own-screens.md`.
@@ -129,12 +129,12 @@ The repositories are **public**, so every commit is visible the moment it is pus
   still awaiting core for the principal — and a gateway that closes anything arriving before
   authentication rejects a *valid* session, at a rate set by network timing rather than by anything
   in the code. The client answered that by reconnecting, and because it reset its backoff on
-  `onopen` it reconnected about twice a second, so the app wore a flashing "Reconnecting…" banner
+  `onopen` it reconnected about twice a second, so shell wore a flashing "Reconnecting…" banner
   for ten to twenty seconds on every load until a lucky read arrived. Both halves are fixed
   (`chat/src/gateway.ts` holds pre-auth messages, `@kernhq/sdk` waits for `welcome`); the rule
   behind them is that an accepted TCP socket is not an authenticated session, so nothing may be
   sent, counted or reported as connected until the server says so.
-- Ports: app 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
+- Ports: shell 5173 · core 4000 · chat 4100 · mail 4200 · collab 4300 · docs 4400. The live
   allocation, the next free number, and the map of every repository are generated —
   `node .claude/skills/kern-repos/scripts/sync.mjs`, then read the `kern-repos` skill.
 - Dev DB on this machine: Homebrew Postgres 18 at `localhost:5432` (`kern`/`kern`); the compose Postgres listens on `${KERN_PG_PORT:-5432}` (5433 here).
@@ -156,7 +156,7 @@ Mailpit for `mail`. Things learned the hard way:
   `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
   cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
   `pnpm install --lockfile-only` there, then copy the lockfile back.
-- **Only `kernel` and `modules` commit a lockfile; `core`, `chat`, `mail`, `app` and `docs` do not.**
+- **Only `kernel` and `modules` commit a lockfile; `core`, `chat`, `mail`, `shell` and `docs` do not.**
   Their CI is `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo
   without one resolves fresh from its ranges every run and a repo with one fails at *install* the
   moment its lockfile drifts — before a single test. Check which kind you are in before adding a
@@ -174,13 +174,13 @@ comments and commit messages keep the voice they have; user-facing strings belon
 
 ## Quality bar
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build` must pass before pushing.
-- UI follows `app/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
+- UI follows `shell/DESIGN.md` (Ink/paper design system) and must work in RTL (fa/ar) and dark mode.
 - All user-facing strings go through i18n (Paraglide) — no hardcoded English in components.
 - **A screen that works is not finished; it has to be pleasant.** Kern is judged as a product, so
   the things that read as amateur are defects here, not polish: text nobody can read in dark mode,
   a blank browser tab, an icon button a screen reader calls "button", a control too small to hit, a
   page that scrolls sideways in Persian. None of that fails a build or a type-check, so it is
-  guarded by a machine instead: `repos/app/tests/e2e/ux.spec.ts` sweeps **every route in four
+  guarded by a machine instead: `repos/shell/tests/e2e/ux.spec.ts` sweeps **every route in four
   renderings** — light and dark, LTR and RTL — against the rules in `ux-audit.ts`, and CI runs it.
   It is the only check that looks at the *rendered* interface. Adding a route means adding it there.
   What a machine cannot judge — whether the copy is kind, whether the layout has rhythm — is the
@@ -200,7 +200,7 @@ Keep it specific and short. Delete anything that stops being true — a stale no
 
 ---
 
-# This repository: kern (umbrella)
+# This repository: app (umbrella)
 
 The project's face and the local development workspace. It holds the self-host distribution
 (`selfhost/`), the docs and ADRs (`docs/`), and the scripts that clone every other repository into
@@ -218,7 +218,7 @@ pnpm dev       # every service with hot reload
   `turbo.json`, and CI clones that repo alone — so the file has to be a *root* config, while a
   package inside this workspace would need `extends: ["//"]`, which turbo rejects at a root.
   `pnpm dev|build|lint|typecheck|test` therefore run `scripts/run-all.sh`, which calls each
-  repo's own script in dependency order (kernel → modules → services → app → docs). It reports
+  repo's own script in dependency order (kernel → modules → services → shell → docs). It reports
   every failure rather than stopping at the first, and `--parallel` is what `pnpm dev` uses.
 - **`pnpm status` is the only honest answer to "is everything committed?"** Ten repositories means ten
   answers, and `website` is checked out *beside* the umbrella rather than inside `repos/`, so a loop
@@ -258,7 +258,7 @@ pnpm dev       # every service with hot reload
   at its own hostname, because Cloudflare's Free and Pro plans reject a request body over 100 MB
   while `UPLOAD_MAX_PUT_BYTES` signs single-PUT URLs up to 500 MB — proxy the storage path and every
   large upload dies as a 413 the browser reports as a network error. So MinIO gets `files.` on a
-  DNS-only record and the app keeps the CDN. `scripts/check-selfhost-drift.py` checks all three:
+  DNS-only record and shell keeps the CDN. `scripts/check-selfhost-drift.py` checks all three:
   a copy may differ in a variable's *value*, never in the set of keys or the Caddy routes.
 - **`selfhost/coolify/` mounts nothing.** A Compose file pasted into Coolify has no files beside it,
   so the Caddy config is a heredoc inside the container's command and the Postgres init script is
@@ -291,13 +291,13 @@ pnpm dev       # every service with hot reload
   registry install in a clone outside the workspace — a local build resolves differently and proves
   nothing.
 - **`pnpm.overrides` pins `@kernhq/contracts|kernel|sdk|ui` to `workspace:*`.** Without it a repo
-  whose dependency range excludes the local version (app wanted `module-tracker@^0.3.0`, the
+  whose dependency range excludes the local version (shell wanted `module-tracker@^0.3.0`, the
   workspace had 0.2.1) installs the published module, which drags a published `@kernhq/contracts`
   into the tree. Two copies of the contracts then coexist, and `svelte-check` resolves the stale one
-  while plain `tsc` resolves the linked one — so the app reports errors for procedures that exist,
+  while plain `tsc` resolves the linked one — so shell reports errors for procedures that exist,
   in files nobody touched. Plain `tsc` passing is not evidence here; `pnpm typecheck` is.
 - **A release is one act across six repositories, and `release.yml` here is the only thing that
-  performs it.** Nightly (or by hand) it tags one version in `core`, `app`, `chat`, `mail` and
+  performs it.** Nightly (or by hand) it tags one version in `core`, `shell`, `chat`, `mail` and
   `collab`, waits for each image to appear in GHCR — `release-feed.mjs` reads the images to find out
   what modules a release contains, so the feed cannot be built before they exist — then publishes the
   umbrella release. That fires `release-feed.yml`, which signs the feed and dispatches `rollout.yml`,
@@ -324,15 +324,15 @@ pnpm dev       # every service with hot reload
   range; pnpm does not re-evaluate a resolution that still satisfies, so once the lockfile records
   a registry version it keeps it. Today `@kernhq/module-mail` is linked while chat and tracker are
   registry copies, in the same install. Check with
-  `readlink repos/app/node_modules/@kernhq/module-<id>` before wondering why an edit to a module's
-  client had no effect — the answer is that the app never read your file. This lockfile is
+  `readlink repos/shell/node_modules/@kernhq/module-<id>` before wondering why an edit to a module's
+  client had no effect — the answer is that shell never read your file. This lockfile is
   gitignored, so the linking state is per machine: two people on the same commit can disagree about
   which packages are linked, and only one of them sees the bug.
 - **Editing a module's client means a publish round trip, and it is worth checking that first.**
   `./client` ships as source, so an edit is visible immediately *if* the package is linked and not
   at all if it is not. Either way the consumer's CI installs from the registry, so the change has to
   publish before the consumer's commit can go green: module changeset and push, wait for the version
-  to appear on npm, then bump the app.
+  to appear on npm, then bump shell.
 - **`tsx watch` processes pile up, and the oldest one owns the port.** Seven `core` watchers were
   running at once from earlier sessions; the first to bind :4000 keeps it, and every later one
   reloads your edits into a process nobody can reach. The symptom is a service that ignores a change

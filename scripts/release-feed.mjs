@@ -115,7 +115,7 @@ const entry = {
   version,
   channel: 'stable',
   publishedAt: value('published-at', new Date().toISOString()),
-  notesUrl: `https://github.com/KernAIO/kern/releases/tag/v${version}`,
+  notesUrl: `https://github.com/KernAIO/app/releases/tag/v${version}`,
   services: serviceTags,
   modules,
   minPreviousVersion,

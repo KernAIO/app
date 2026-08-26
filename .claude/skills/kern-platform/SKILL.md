@@ -39,7 +39,7 @@ there is a promise to strangers.
 | Server capability | `repos/kernel/packages/kernel/src/module.ts` — `ServerModule`, `ModuleDefinition` |
 | The code that *consumes* the declaration | `repos/kernel/packages/kernel/src/{registry,kernel,http,jobs,realtime,authz}.ts` |
 | Client contribution types | `@kernhq/kernel/client`, bound to Svelte in `repos/kernel/packages/ui/src/lib/module.ts` |
-| The shell that renders it | `repos/app/src/routes/(app)/[ws]/+layout.svelte`, `lib/components/CommandPalette.svelte`, `lib/dashboard/*`, `lib/modules/ModuleSidebar.svelte` |
+| The shell that renders it | `repos/shell/src/routes/(app)/[ws]/+layout.svelte`, `lib/components/CommandPalette.svelte`, `lib/dashboard/*`, `lib/modules/ModuleSidebar.svelte` |
 | The shape every module starts from | `repos/modules/packages/_template` |
 | The generator | `repos/modules/scripts/new-module.mjs` (one package — there is no app half) |
 
@@ -98,7 +98,7 @@ grep -rn "<the old thing>" ../../{core,chat,mail,collab}/src ../../app/src 2>/de
 
 Every directory in that `ls` gets an answer: wired up, or one line saying why this module does not
 need it. Then the hosts — `repos/core/src/service.ts` and the other services' module lists — and
-`repos/app/src/lib/modules/registry.ts`.
+`repos/shell/src/lib/modules/registry.ts`.
 
 - [ ] contracts + kernel implementation + the code that consumes the declaration
 - [ ] `@kernhq/contracts` / `@kernhq/kernel` released; ranges bumped in `_template` and every module
