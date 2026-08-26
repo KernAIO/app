@@ -87,6 +87,28 @@ The repositories are **public**, so every commit is visible the moment it is pus
   and new tables; drop and rename one release later. This is what makes rolling an image back work
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on
   purpose. A release that cannot follow it is marked `schemaChanges: breaking` in the release feed.
+- **Every migration must survive being applied twice, and the test has to replay the SQL.**
+  `create policy` and `add constraint` have no `if not exists` at all; `create table` and
+  `create index` do not get one unless you write it. So a replay throws — and a module migration
+  that throws takes down the **whole host service**, not just its own module. `core` hosts five, so
+  one module's replay is an outage for the other four. A replay is not hypothetical: drizzle keys
+  applied migrations by content hash, so *editing a migration file* makes every file in the folder
+  run again against schemas that already have their objects. Every first-party module is guarded now
+  and each carries `src/server/migrations.test.ts`, which applies the folder to a database created
+  from nothing, applies it a second time, and asserts each policy exists once. Calling
+  `migrateModule` twice proves nothing: the second call reads `__migrations`, sees the work is done
+  and returns.
+  Two things a blanket edit gets wrong, both found by doing it: a migration already made idempotent
+  with a `do $$ … end $$` catalogue check must not have a `--> statement-breakpoint` inserted into
+  its dollar-quoted body, and `ALTER TABLE … ADD PRIMARY KEY` needs a name and a
+  `drop constraint if exists` like any other constraint.
+- **Idempotent is not the same as effective, and the second one has no guard.** A replayed
+  `create table if not exists` reports success and changes nothing, so a *rewritten* migration
+  silently leaves an existing schema exactly as it was — the boot failure is gone and the change
+  never happened. Nothing detects this: the migration is recorded as applied and the service starts.
+  Rewriting a migration rather than adding a new one means `drop schema mod_<id> cascade` on every
+  database that already ran it, which is only acceptable before anyone depends on the data. After
+  that, add a migration.
 - **A migration that has only ever run against your dev database has not been tested.**
   `module-inventory`'s `0001_rls.sql` copied HR's custody exclusion constraint
   (`exclude using gist (asset_id with =, tstzrange(...) with &&)`) without HR's
