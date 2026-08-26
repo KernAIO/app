@@ -296,6 +296,15 @@ comments and commit messages keep the voice they have; user-facing strings belon
   It is the only check that looks at the *rendered* interface. Adding a route means adding it there.
   What a machine cannot judge — whether the copy is kind, whether the layout has rhythm — is the
   `kern-ui` skill's job, and it is still yours to check.
+- **`blur()` does not reset where the next Tab starts, so a test that walks the page twice walks
+  from the wrong place.** Chrome keeps a *sequential focus navigation starting point* at the element
+  that was last focused, and clearing focus leaves it there — so a second keyboard walk carries on
+  from where the first one stopped rather than from the top. The symptom is not an error: the walk
+  lands one control further on, the assertion fails against the control you meant, and the text you
+  typed is sitting in the row below. Measured on a database test that tabbed to row 1's Notes cell
+  twice and typed into row 2. Focus the root element first — `documentElement`, `tabindex="-1"`,
+  focus, remove the attribute — before every walk. Any browser test that tabs more than once per
+  page has this and will not know it.
 - **Two of these defects are invisible from the source, so measure rather than eyeball.** A colour
   pair's contrast is arithmetic, not taste: compute it against the surface the text actually sits on
   and against the *palest* one it could sit on. And `opacity` on a row fades its text against the
