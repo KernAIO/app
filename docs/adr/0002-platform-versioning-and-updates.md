@@ -82,10 +82,20 @@ maintenance mode, migrates once, brings `core` up and waits for ready, then veri
 reports the new version. Any failure prints the rollback command. Literal zero risk is not on offer
 and is not claimed.
 
-**7. Cloud is managed by us and tracks latest stable automatically.** The same feed generation that
-publishes `releases.json` triggers the cloud rollout: migrate once behind the advisory lock and
-gated on the dry run, then roll services with surge, canary on an internal workspace, and roll back
-automatically on a health or error-rate regression. The pipeline itself lives in a private ops repo.
+**7. Cloud is managed by us and tracks latest stable automatically.** `release-feed.yml` dispatches
+`rollout.yml` (in this repository) once a release's feed is signed: pin `KERN_VERSION` in Coolify,
+deploy, wait for `app.kernaio.com` to report it, then keep watching it for a few minutes rather than
+trusting one successful poll. A rollout that never lands, or lands and then falls over, is redeployed
+back to whatever was live before automatically — see ADR 0009's addendum below.
+
+This is not the surge-and-canary rollout described in earlier drafts of this decision: one Coolify
+application serves every cloud workspace, so a new version is live for everyone the moment it reports
+healthy, and nothing in this stack exports a request error rate to gate on. What exists today is a
+health/reachability regression check with an automatic rollback, not a traffic-split canary — this
+line said otherwise before it was checked against what actually runs, and against `rollout.yml` at
+that time, which had no rollback at all. Weighted-traffic canary would need infrastructure
+(a second application instance and a load balancer that can split by weight) this stack does not have
+yet.
 
 ## Consequences
 
