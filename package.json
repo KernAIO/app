@@ -40,6 +40,7 @@
       "@kernhq/module-billing": "workspace:*",
       "@kernhq/module-chat": "workspace:*",
       "@kernhq/module-hr": "workspace:*",
+      "@kernhq/module-inventory": "workspace:*",
       "@kernhq/module-mail": "workspace:*",
       "@kernhq/module-quire": "workspace:*",
       "@kernhq/module-tracker": "workspace:*",

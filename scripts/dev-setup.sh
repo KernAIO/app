@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ORG="${KERN_ORG:-KernAIO}"
-REPOS=(app core chat mail collab kernel module-tracker module-chat module-quire module-hr module-mail module-billing module-template docs)
+REPOS=(app core chat mail collab kernel module-tracker module-chat module-quire module-hr module-mail module-billing module-inventory module-template docs)
 mkdir -p repos
 for r in "${REPOS[@]}"; do
   if [ -d "repos/$r/.git" ]; then
