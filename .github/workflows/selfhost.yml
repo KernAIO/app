@@ -4,8 +4,8 @@ name: Self-host distribution
 # ${VAR} inside a YAML flow mapping — so `install.sh` failed for every self-hoster while CI stayed
 # green, because nothing parsed it.
 on:
-  push: { branches: [main], paths: ['selfhost/**', '.github/workflows/selfhost.yml'] }
-  pull_request: { paths: ['selfhost/**', '.github/workflows/selfhost.yml'] }
+  push: { branches: [main], paths: ['selfhost/**', 'cloud/**', 'scripts/check-selfhost-drift.py', '.github/workflows/selfhost.yml'] }
+  pull_request: { paths: ['selfhost/**', 'cloud/**', 'scripts/check-selfhost-drift.py', '.github/workflows/selfhost.yml'] }
 
 permissions: { contents: read }
 
