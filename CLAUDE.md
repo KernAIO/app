@@ -143,6 +143,22 @@ The repositories are **public**, so every commit is visible the moment it is pus
   not a broken table but a host service that will not boot: `core` never binds :4000 and everything
   that talks to it is down. Use `primaryKey({ columns: [...] })` in the table's second argument.
   `mod_inventory.counters` had this.
+- **A descending index column is `t.at.desc()`, never `desc(t.at)`.** They read identically and only
+  one is an index definition: `desc()` is the *query* helper, so drizzle records it in the snapshot
+  as a SQL expression — `("created_at" desc)` — which Postgres will not build. The emitted
+  `CREATE INDEX` is valid either way, so the migration applies and the database is right; it is the
+  snapshot that is wrong, which means `db:generate` proposes the index again for ever and nothing
+  else notices. `check-snapshot-drift.mjs` is the only thing that catches it, because it asks
+  Postgres to build what the snapshot describes — which is the whole reason that script exists.
+  `mod_hr.sensitive_access_log` shipped with it in review.
+- **A migration journal entry's `when` must exceed every entry before it.** Drizzle reads the highest
+  `created_at` already in `__migrations` **once**, before its loop, then applies every entry above
+  it — so an entry with a lower timestamp is not applied late, it is skipped permanently, silently,
+  and *only on databases that already exist*. A fresh database has no floor to fall below, so every
+  developer machine, all of CI and every new install agree that nothing is wrong.
+  `0009_beyond_cap_minutes` sat a day below `0007` and would never have reached a deployed instance;
+  `module-hr`'s `src/server/journal.test.ts` is the guard, and is worth copying into any module that
+  hand-edits a journal.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
 - **A module ships its own screens, and `shell` ships only the shell.** Contract, server, pages,
   widgets, strings and manifest are one package; deleting it removes the feature completely. The
