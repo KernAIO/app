@@ -6,7 +6,11 @@ x-kern-env: &kern-env
   NODE_ENV: production
   KERN_BASE_URL: ${KERN_BASE_URL}
   KERN_SECRET: ${KERN_SECRET}
-  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  # kern_app, not POSTGRES_USER. POSTGRES_USER is the image's bootstrap superuser, and a superuser
+  # bypasses row-level security unconditionally — every `force row level security` in every
+  # migration is dead while the services connect as one. `db-init` creates this role NOSUPERUSER
+  # NOBYPASSRLS and hands it ownership of the database, which is what makes the policies apply.
+  DATABASE_URL: postgres://kern_app:${KERN_DB_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
   NATS_URL: nats://nats:4222
   VALKEY_URL: redis://valkey:6379
   S3_ENDPOINT: ${S3_ENDPOINT}
@@ -59,7 +63,7 @@ services:
     image: ghcr.io/kernaio/core:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: "${KERN_ADMIN_EMAIL}", KERN_ADMIN_PASSWORD: "${KERN_ADMIN_PASSWORD}" }
-    depends_on: { postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
+    depends_on: { db-init: { condition: service_completed_successfully }, postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
     # No healthcheck override here. The image already carries one, and it is the only kind that
     # can work: node:24-slim has neither wget nor curl, so a `wget` test can never run, and the
     # service listens on IPv4 only, so `localhost` resolves to ::1 and is refused. The override
@@ -74,23 +78,26 @@ services:
     environment: *kern-env
     depends_on: { core: { condition: service_healthy } }
 
+  # chat, mail and collab each own module schemas and migrate them in their own process at boot, so
+  # they need db-init to have finished too — waiting on core alone would be waiting on the wrong
+  # thing the first time one of them starts without core restarting.
   chat:
     image: ghcr.io/kernaio/chat:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4100 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   mail:
     image: ghcr.io/kernaio/mail:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4200 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   collab:
     image: ghcr.io/kernaio/collab:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4300 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   # Opt-in: `docker compose --profile autoupdate up -d`.
   #
@@ -101,6 +108,16 @@ services:
   #
   # Its image tag is deliberately not ${KERN_VERSION}: an upgrade must not recreate the container
   # that is running the upgrade.
+  #
+  # It mounts this directory at its own host path, not at /kern, and that is load-bearing rather
+  # than tidiness. Everything in here runs `docker compose` against the host's daemon over the
+  # socket, and Compose resolves a relative bind mount (`./Caddyfile`, `./postgres-init`) against
+  # the directory holding the compose file — then hands the daemon that path as a *host* path. Under
+  # the old `.:/kern` mapping the daemon was told to bind `/kern/Caddyfile`, which does not exist on
+  # the host, so Docker created an empty directory there and Caddy came back up with no config.
+  # Mounting the directory at the same absolute path inside and out makes both resolutions agree.
+  # KERN_DIR is written to .env by install.sh; ${PWD} is the fallback for an instance installed
+  # before it was, and is correct because every entry point here cd's to this directory first.
   updater:
     image: docker:27-cli
     profiles: [autoupdate]
@@ -108,8 +125,8 @@ services:
     environment: { TZ: "${TZ:-UTC}" }
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/kern
-    working_dir: /kern
+      - ${KERN_DIR:-${PWD}}:${KERN_DIR:-${PWD}}
+    working_dir: ${KERN_DIR:-${PWD}}
     entrypoint:
       - /bin/sh
       - -c
@@ -124,6 +141,119 @@ services:
     volumes: ["pgdata:/var/lib/postgresql", "./postgres-init:/docker-entrypoint-initdb.d:ro"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"], interval: 5s, timeout: 5s, retries: 20 }
 
+  # Runs to completion on every `up`, before any service starts. Two jobs, both idempotent, because
+  # every boot re-runs this:
+  #
+  #   1. The extensions. postgres-init/ only runs on a data directory created from nothing, so an
+  #      instance that already exists never gets a newly needed one — and a module reaching for an
+  #      extension nobody created fails inside its own migration, which takes down the whole host
+  #      service rather than one feature. module-inventory's gist exclusion constraint needs
+  #      btree_gist; core hosts five modules and would never bind :4000.
+  #   2. The role the services actually connect as. POSTGRES_USER is this image's bootstrap
+  #      superuser, and a superuser bypasses row-level security unconditionally — so every
+  #      `force row level security` in every migration was dead while DATABASE_URL pointed at it.
+  #      kern_app is NOSUPERUSER NOBYPASSRLS and owns the database and everything already in it,
+  #      which is what makes the policies start applying. Ownership is reassigned rather than only
+  #      granted, so this works on an instance that already has data.
+  #
+  # The SQL is inline and contains no `$` at all, on purpose. The Coolify copy of this stack has no
+  # files to mount beside it, so the same block has to survive being pasted into a Compose command
+  # string, which Compose interpolates before the shell ever sees it. That rules out `do $$ … $$`
+  # blocks — the conditional statements are `\gexec` instead — and the password reaches psql through
+  # `\getenv`, never through the shell.
+  db-init:
+    image: pgvector/pgvector:pg18
+    restart: "no"
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      PGHOST: postgres
+      PGUSER: "${POSTGRES_USER}"
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
+      PGDATABASE: "${POSTGRES_DB}"
+      KERN_DB_APP_PASSWORD: "${KERN_DB_APP_PASSWORD}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        psql -v ON_ERROR_STOP=1 -q -f - <<'SQL'
+        \getenv app_password KERN_DB_APP_PASSWORD
+
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE EXTENSION IF NOT EXISTS ltree;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+        SELECT 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+        WHERE EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_stat_statements')
+        \gexec
+
+        SELECT 'CREATE ROLE kern_app LOGIN'
+        WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kern_app')
+        \gexec
+
+        ALTER ROLE kern_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE
+          PASSWORD :'app_password';
+
+        SELECT format('ALTER DATABASE %I OWNER TO kern_app', current_database())
+        \gexec
+
+        SELECT format('ALTER SCHEMA %I OWNER TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname NOT IN ('information_schema', 'public')
+          AND nspowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_namespace'::regclass AND d.objid = pg_namespace.oid
+                            AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER %s %I.%I OWNER TO kern_app',
+                      CASE c.relkind WHEN 'S' THEN 'SEQUENCE'
+                                     WHEN 'v' THEN 'VIEW'
+                                     WHEN 'm' THEN 'MATERIALIZED VIEW'
+                                     WHEN 'f' THEN 'FOREIGN TABLE'
+                                     ELSE 'TABLE' END,
+                      n.nspname, c.relname)
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+          AND c.relowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                            AND d.deptype IN ('e', 'i'))
+        \gexec
+
+        SELECT format('ALTER ROUTINE %s OWNER TO kern_app', p.oid::regprocedure)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND p.proowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER TYPE %s OWNER TO kern_app', t.oid::regtype)
+        FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND t.typtype IN ('e', 'c', 'd', 'r')
+          AND t.typowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('GRANT ALL ON DATABASE %I TO kern_app', current_database())
+        \gexec
+
+        SELECT format('GRANT ALL ON SCHEMA %I TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname <> 'information_schema'
+        \gexec
+        SQL
+
   nats:
     image: nats:2.11-alpine
     restart: unless-stopped
@@ -136,20 +266,24 @@ services:
     command: ["valkey-server", "--save", "60", "1000", "--appendonly", "no"]
     volumes: ["valkeydata:/data"]
 
+  # Pinned, not `latest`. This artifact's whole promise is a reproducible upgrade and a rollback
+  # that lands somewhere known, and `latest` breaks both: two hosts installing a week apart get
+  # different MinIO builds, and MinIO in particular has changed its licence and dropped features
+  # across releases. Move these deliberately, in a commit.
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: server /data
     environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
     volumes: ["miniodata:/data"]
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on: [minio]
     entrypoint: >
       /bin/sh -c "sleep 3; mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} && mc mb -p local/${S3_BUCKET} || true"
 
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.6
     profiles: [calls]
     restart: unless-stopped
     command: ["--config", "/etc/livekit.yaml"]

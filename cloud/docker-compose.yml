@@ -21,7 +21,11 @@ x-kern-env: &kern-env
   NODE_ENV: production
   KERN_BASE_URL: ${SERVICE_URL_CADDY}
   KERN_SECRET: ${SERVICE_BASE64_64_KERNSECRET}
-  DATABASE_URL: postgres://kern:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/kern
+  # kern_app, not the bootstrap superuser. This instance is the one where it matters most:
+  # workspaces belonging to strangers share one database, and a superuser bypasses row-level
+  # security unconditionally — so until this changed, procedure-level checks were the only tenant
+  # isolation there was. See the db-init service below.
+  DATABASE_URL: postgres://kern_app:${SERVICE_PASSWORD_APPDB}@postgres:5432/kern
   NATS_URL: nats://nats:4222
   VALKEY_URL: redis://valkey:6379
   # Hetzner Object Storage. The public endpoint is the same host: the browser presigns against it
@@ -124,12 +128,17 @@ services:
   core:
     image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
     restart: unless-stopped
+    # KERN_ADMIN_EMAIL has no default on purpose. Core's bootstrap creates this address as a real
+    # instance admin, with a superuser-equivalent view of every workspace on the instance — so a
+    # placeholder default creates a live administrator at an address nobody owns and nobody can
+    # receive a password reset for. Failing the deploy is the honest answer.
     environment:
       <<: *kern-env
       PORT: 4000
-      KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:-admin@kernaio.com}
+      KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:?set KERN_ADMIN_EMAIL to the first administrator's email address before deploying}
       KERN_ADMIN_PASSWORD: ${SERVICE_PASSWORD_ADMIN}
     depends_on:
+      db-init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
       valkey: { condition: service_started }
@@ -147,23 +156,25 @@ services:
     environment: *kern-env
     depends_on: { core: { condition: service_healthy } }
 
+  # Each of these owns module schemas and migrates them in its own process at boot, so each waits
+  # on db-init as well as on core.
   chat:
     image: ghcr.io/kernaio/chat:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4100 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   mail:
     image: ghcr.io/kernaio/mail:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4200 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   collab:
     image: ghcr.io/kernaio/collab:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4300 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   postgres:
     image: pgvector/pgvector:pg18
@@ -171,6 +182,112 @@ services:
     environment: { POSTGRES_USER: kern, POSTGRES_PASSWORD: "${SERVICE_PASSWORD_POSTGRES}", POSTGRES_DB: kern }
     volumes: ["pgdata:/var/lib/postgresql"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U kern"], interval: 5s, timeout: 5s, retries: 20 }
+
+  # Runs to completion on every deploy, before any service starts. Identical to the host and
+  # Coolify installs' db-init; keep the three in step. Two jobs, both idempotent:
+  #
+  #   1. The extensions. A module reaching for one nobody created fails inside its own migration,
+  #      and a module migration that throws takes down the whole host service — core hosts five and
+  #      would never bind :4000. module-inventory needs btree_gist.
+  #   2. The role the services connect as, NOSUPERUSER NOBYPASSRLS, owning the database and
+  #      everything already in it. That is what makes `force row level security` start applying,
+  #      and on this instance it is the difference between real tenant isolation and none.
+  #
+  # The SQL contains no `$` at all, on purpose: Compose interpolates a command string before the
+  # shell ever sees it. So no `do $$ … $$` blocks — the conditional statements are `\gexec` — and
+  # the password reaches psql through `\getenv` rather than through the shell.
+  db-init:
+    image: pgvector/pgvector:pg18
+    restart: "no"
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      PGHOST: postgres
+      PGUSER: kern
+      PGPASSWORD: "${SERVICE_PASSWORD_POSTGRES}"
+      PGDATABASE: kern
+      KERN_DB_APP_PASSWORD: "${SERVICE_PASSWORD_APPDB}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        psql -v ON_ERROR_STOP=1 -q -f - <<'SQL'
+        \getenv app_password KERN_DB_APP_PASSWORD
+
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE EXTENSION IF NOT EXISTS ltree;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+        SELECT 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+        WHERE EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_stat_statements')
+        \gexec
+
+        SELECT 'CREATE ROLE kern_app LOGIN'
+        WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kern_app')
+        \gexec
+
+        ALTER ROLE kern_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE
+          PASSWORD :'app_password';
+
+        SELECT format('ALTER DATABASE %I OWNER TO kern_app', current_database())
+        \gexec
+
+        SELECT format('ALTER SCHEMA %I OWNER TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname NOT IN ('information_schema', 'public')
+          AND nspowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_namespace'::regclass AND d.objid = pg_namespace.oid
+                            AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER %s %I.%I OWNER TO kern_app',
+                      CASE c.relkind WHEN 'S' THEN 'SEQUENCE'
+                                     WHEN 'v' THEN 'VIEW'
+                                     WHEN 'm' THEN 'MATERIALIZED VIEW'
+                                     WHEN 'f' THEN 'FOREIGN TABLE'
+                                     ELSE 'TABLE' END,
+                      n.nspname, c.relname)
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+          AND c.relowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                            AND d.deptype IN ('e', 'i'))
+        \gexec
+
+        SELECT format('ALTER ROUTINE %s OWNER TO kern_app', p.oid::regprocedure)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND p.proowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER TYPE %s OWNER TO kern_app', t.oid::regtype)
+        FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND t.typtype IN ('e', 'c', 'd', 'r')
+          AND t.typowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('GRANT ALL ON DATABASE %I TO kern_app', current_database())
+        \gexec
+
+        SELECT format('GRANT ALL ON SCHEMA %I TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname <> 'information_schema'
+        \gexec
+        SQL
 
   nats:
     image: nats:2.11-alpine

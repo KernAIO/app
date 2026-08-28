@@ -20,7 +20,29 @@
 		reverse_proxy collab:4300
 	}
 	# object storage (presigned URLs)
-	handle_path /s3/* {
+	#
+	# NO path stripping, and the route is the bucket name rather than a prefix of our own. A
+	# presigned URL is a SigV4 signature over the canonical path, so MinIO recomputes the signature
+	# from the path it receives: it has to receive the byte-identical path core signed. The prefix
+	# this used to carry (`handle_path /s3/*`, with S3_PUBLIC_ENDPOINT=https://<domain>/s3) signed
+	# `/s3/<bucket>/<key>` and delivered `/<bucket>/<key>`, so every upload and every download on
+	# every self-host install failed with 403 SignatureDoesNotMatch. A path prefix can never work
+	# here unless the origin sees the prefix too.
+	#
+	# So S3_PUBLIC_ENDPOINT is the bare origin and the signed path starts with the bucket. `kern` is
+	# in core's RESERVED_SLUGS, so no workspace can ever live at /kern and shadow this.
+	#
+	# Same-origin, which is why nothing configures CORS: the browser PUTs to the page's own origin.
+	# If you would rather keep storage off the app domain — a CDN or WAF in front that caps request
+	# bodies is the usual reason; Cloudflare's is 100 MB against signed PUTs of up to 500 MB — add a
+	# second site block and point S3_PUBLIC_ENDPOINT at it instead. That name needs its own DNS
+	# record, and it makes the upload cross-origin, so the bucket needs CORS allowing your app
+	# origin with ETag exposed:
+	#
+	#     files.{$KERN_DOMAIN} {
+	#         reverse_proxy minio:9000
+	#     }
+	handle /kern/* {
 		reverse_proxy minio:9000
 	}
 	# core API (auth, workspaces, all other modules) + OpenAPI

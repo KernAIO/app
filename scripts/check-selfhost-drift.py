@@ -21,6 +21,7 @@ Object Storage, see cloud/docker-compose.yml), so it has no `/s3` handler to kee
 omissions must be declared here, or the check fails; nothing else about the routing order may move.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -33,15 +34,27 @@ CLOUD = "cloud/docker-compose.yml"
 
 # Directives a copy is allowed to be missing, per path. Kern Cloud proxies no MinIO.
 ALLOWED_MISSING = {
-    CLOUD: {"handle_path /s3/* {", "reverse_proxy minio:9000"},
+    CLOUD: {"handle /kern/* {", "reverse_proxy minio:9000"},
     COOLIFY: set(),
 }
+
+# Variables a copy declares with `${VAR:?message}`, which makes `docker compose config` fail rather
+# than substitute a blank. That is the point of them — KERN_ADMIN_EMAIL creates a real instance
+# administrator on the first boot, so defaulting it is worse than refusing to deploy — but it means
+# this check has to supply a value to get a document at all. A placeholder here is not a default in
+# the stack: remove the `:?` and the deploy silently gets one, which is the thing being prevented.
+PLACEHOLDER_ENV = {"KERN_ADMIN_EMAIL": "drift-check@example.invalid"}
 
 
 def config(path):
     """`docker compose config` rather than a plain YAML load, so anchors and defaults are resolved
     the way Docker resolves them."""
-    out = subprocess.run(["docker", "compose", "-f", path, "config"], capture_output=True, text=True)
+    out = subprocess.run(
+        ["docker", "compose", "-f", path, "config"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **PLACEHOLDER_ENV},
+    )
     if out.returncode:
         sys.exit(f"::error::{path} does not parse:\n{out.stderr}")
     return yaml.safe_load(out.stdout)

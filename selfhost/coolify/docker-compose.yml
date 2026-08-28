@@ -10,26 +10,33 @@
 #   * derives every URL from the domain Coolify assigns, so changing the domain is one edit.
 #
 # Kern still runs its own Caddy. That is what turns one domain into six services — /api to core,
-# /api/chat and /ws to chat, /collab to collab, /s3 to MinIO, the rest to the app. Doing that from
+# /api/chat and /ws to chat, /collab to collab, /kern to MinIO, the rest to the app. Doing that from
 # Coolify's proxy would mean six domains or six sets of labels.
 #
 # Deploy it as a Docker Compose resource, either from this repository (base directory
 # /selfhost/coolify) or by pasting the file:
 # https://docs.kernaio.com/self-hosting/coolify/
 #
-# Two variables are worth setting before the first deploy, in Coolify's Environment Variables tab:
-#   KERN_ADMIN_EMAIL   the first admin account. Read on the first boot only; ignored afterwards.
-#   KERN_VERSION       pin a release instead of following `latest`.
+# Set these in Coolify's Environment Variables tab before the first deploy:
+#   KERN_ADMIN_EMAIL   required. The first admin account, created on the first boot and never
+#                      again. There is no default: it would be a real instance administrator at an
+#                      address you do not own. The deploy fails with a message until you set it.
+#   KERN_VERSION       pin a release instead of following `latest`. Worth doing — `latest` can hand
+#                      five services five different builds if a pull lands mid-release.
 
 x-kern-env: &kern-env
   NODE_ENV: production
   KERN_BASE_URL: ${SERVICE_URL_CADDY}
   KERN_SECRET: ${SERVICE_BASE64_64_KERNSECRET}
-  DATABASE_URL: postgres://kern:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/kern
+  # kern_app, not the bootstrap superuser — see the db-init service below.
+  DATABASE_URL: postgres://kern_app:${SERVICE_PASSWORD_APPDB}@postgres:5432/kern
   NATS_URL: nats://nats:4222
   VALKEY_URL: redis://valkey:6379
   S3_ENDPOINT: http://minio:9000
-  S3_PUBLIC_ENDPOINT: ${SERVICE_URL_CADDY}/s3
+  # The bare origin, with no path of its own: presigned URLs are SigV4 signatures over the
+  # canonical path, and Caddy routes /kern/* to MinIO without stripping, so the path MinIO
+  # receives is the path core signed. A `/s3` prefix here is what made every upload 403.
+  S3_PUBLIC_ENDPOINT: ${SERVICE_URL_CADDY}
   S3_REGION: us-east-1
   S3_BUCKET: kern
   S3_ACCESS_KEY: kern
@@ -94,8 +101,10 @@ services:
           handle /collab* {
             reverse_proxy collab:4300
           }
-          # object storage (presigned URLs)
-          handle_path /s3/* {
+          # object storage (presigned URLs) — routed by bucket name, with NO stripping, because
+          # SigV4 signs the path MinIO must receive. Coolify assigns one domain, so there is no
+          # second hostname to give MinIO here; /kern is safe because it is reserved in core.
+          handle /kern/* {
             reverse_proxy minio:9000
           }
           # core API (auth, workspaces, all other modules) + OpenAPI
@@ -136,15 +145,19 @@ services:
   core:
     image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
     restart: unless-stopped
-    # KERN_ADMIN_EMAIL has to be a valid address or core refuses to start, so it carries a default
-    # that is obviously a placeholder. Set your own before the first deploy — after an admin exists
-    # both of these are ignored, and the password is changed in the interface.
+    # KERN_ADMIN_EMAIL has no default on purpose. Core's bootstrap creates this address as a real
+    # instance admin — a superuser-equivalent view of every workspace on the instance — on the
+    # first boot. A placeholder default therefore creates a live administrator at an address the
+    # operator does not own and cannot receive a password reset for, and nothing later notices.
+    # Failing the deploy with a message is the honest answer; set it in Coolify's Environment
+    # Variables tab before the first deploy. After an admin exists both of these are ignored.
     environment:
       <<: *kern-env
       PORT: 4000
-      KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:-admin@example.com}
+      KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:?set KERN_ADMIN_EMAIL to the first administrator's email address before deploying}
       KERN_ADMIN_PASSWORD: ${SERVICE_PASSWORD_ADMIN}
     depends_on:
+      db-init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
       valkey: { condition: service_started }
@@ -163,33 +176,143 @@ services:
     environment: *kern-env
     depends_on: { core: { condition: service_healthy } }
 
+  # Each of these owns module schemas and migrates them in its own process at boot, so each waits
+  # on db-init as well as on core.
   chat:
     image: ghcr.io/kernaio/chat:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4100 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   mail:
     image: ghcr.io/kernaio/mail:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4200 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   collab:
     image: ghcr.io/kernaio/collab:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4300 }
-    depends_on: { core: { condition: service_healthy } }
+    depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   postgres:
     image: pgvector/pgvector:pg18
     restart: unless-stopped
-    # No init script is mounted, unlike the host install: core's first migration creates pg_trgm,
-    # pgcrypto, ltree and vector itself. The host install also creates pg_stat_statements, which
-    # does nothing without shared_preload_libraries and is not created here.
+    # No init script is mounted, unlike the host install — nothing can be, a pasted Compose file has
+    # no files beside it. The db-init service below does that work instead, and it is the better
+    # place for it anyway: an init script runs only on a data directory created from nothing.
     environment: { POSTGRES_USER: kern, POSTGRES_PASSWORD: "${SERVICE_PASSWORD_POSTGRES}", POSTGRES_DB: kern }
     volumes: ["pgdata:/var/lib/postgresql"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U kern"], interval: 5s, timeout: 5s, retries: 20 }
+
+  # Runs to completion on every deploy, before any service starts. Identical to the host install's
+  # db-init; keep the two in step. Two jobs, both idempotent:
+  #
+  #   1. The extensions. A module reaching for one nobody created fails inside its own migration,
+  #      and a module migration that throws takes down the whole host service — core hosts five and
+  #      would never bind :4000. module-inventory needs btree_gist.
+  #   2. The role the services connect as. POSTGRES_USER is this image's bootstrap superuser, and a
+  #      superuser bypasses row-level security unconditionally, so every `force row level security`
+  #      in every migration was dead. kern_app is NOSUPERUSER NOBYPASSRLS and owns the database and
+  #      everything already in it, which is what makes the policies start applying. That matters
+  #      most here and on Kern Cloud, where workspaces belonging to strangers share one database.
+  #
+  # The SQL contains no `$` at all, on purpose: Compose interpolates a command string before the
+  # shell ever sees it. So no `do $$ … $$` blocks — the conditional statements are `\gexec` — and
+  # the password reaches psql through `\getenv` rather than through the shell.
+  db-init:
+    image: pgvector/pgvector:pg18
+    restart: "no"
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      PGHOST: postgres
+      PGUSER: kern
+      PGPASSWORD: "${SERVICE_PASSWORD_POSTGRES}"
+      PGDATABASE: kern
+      KERN_DB_APP_PASSWORD: "${SERVICE_PASSWORD_APPDB}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        psql -v ON_ERROR_STOP=1 -q -f - <<'SQL'
+        \getenv app_password KERN_DB_APP_PASSWORD
+
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE EXTENSION IF NOT EXISTS ltree;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+        SELECT 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+        WHERE EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_stat_statements')
+        \gexec
+
+        SELECT 'CREATE ROLE kern_app LOGIN'
+        WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kern_app')
+        \gexec
+
+        ALTER ROLE kern_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE
+          PASSWORD :'app_password';
+
+        SELECT format('ALTER DATABASE %I OWNER TO kern_app', current_database())
+        \gexec
+
+        SELECT format('ALTER SCHEMA %I OWNER TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname NOT IN ('information_schema', 'public')
+          AND nspowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_namespace'::regclass AND d.objid = pg_namespace.oid
+                            AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER %s %I.%I OWNER TO kern_app',
+                      CASE c.relkind WHEN 'S' THEN 'SEQUENCE'
+                                     WHEN 'v' THEN 'VIEW'
+                                     WHEN 'm' THEN 'MATERIALIZED VIEW'
+                                     WHEN 'f' THEN 'FOREIGN TABLE'
+                                     ELSE 'TABLE' END,
+                      n.nspname, c.relname)
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+          AND c.relowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                            AND d.deptype IN ('e', 'i'))
+        \gexec
+
+        SELECT format('ALTER ROUTINE %s OWNER TO kern_app', p.oid::regprocedure)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND p.proowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('ALTER TYPE %s OWNER TO kern_app', t.oid::regtype)
+        FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND n.nspname <> 'information_schema'
+          AND t.typtype IN ('e', 'c', 'd', 'r')
+          AND t.typowner <> 'kern_app'::regrole
+          AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e')
+        \gexec
+
+        SELECT format('GRANT ALL ON DATABASE %I TO kern_app', current_database())
+        \gexec
+
+        SELECT format('GRANT ALL ON SCHEMA %I TO kern_app', nspname)
+        FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg!_%' ESCAPE '!'
+          AND nspname <> 'information_schema'
+        \gexec
+        SQL
 
   nats:
     image: nats:2.11-alpine
@@ -203,8 +326,11 @@ services:
     command: ["valkey-server", "--save", "60", "1000", "--appendonly", "no"]
     volumes: ["valkeydata:/data"]
 
+  # Pinned, not `latest`: a stack whose selling point is a reproducible deploy cannot have its
+  # object store change underneath it, and MinIO has changed licence and dropped features on
+  # `latest`. Move it deliberately, in a commit.
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: server /data
     environment: { MINIO_ROOT_USER: kern, MINIO_ROOT_PASSWORD: "${SERVICE_PASSWORD_MINIO}" }
@@ -212,7 +338,7 @@ services:
 
   # Runs once and exits. Nothing creates the bucket at upload time, so files fail without it.
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     restart: "no"
     depends_on: [minio]
     entrypoint: >
