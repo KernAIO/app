@@ -129,6 +129,16 @@ step "Preflight"
 compose config >/dev/null || fail "docker-compose.yml is not valid. Fix it before upgrading."
 info "compose file is valid"
 
+# An instance installed before the services stopped connecting as the database superuser has no
+# KERN_DB_APP_PASSWORD, and .env is never rewritten by an upgrade. Left empty, db-init would set
+# kern_app's password to nothing and every service would then fail to authenticate — so fill it in
+# here rather than let the upgrade take the instance down. db-init applies it on the next `up`.
+if [ -z "$(env_value KERN_DB_APP_PASSWORD)" ]; then
+  command -v openssl >/dev/null || fail "openssl is needed to generate KERN_DB_APP_PASSWORD. Set it in .env by hand."
+  set_env KERN_DB_APP_PASSWORD "$(openssl rand -hex 32)"
+  info "generated KERN_DB_APP_PASSWORD (the services stop connecting as the database superuser)"
+fi
+
 compose ps --status running --quiet postgres >/dev/null 2>&1 || fail "Postgres is not running."
 compose exec -T postgres pg_isready -U "$(env_value POSTGRES_USER)" >/dev/null \
   || fail "Postgres is not accepting connections."
