@@ -57,6 +57,11 @@ x-kern-env: &kern-env
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
   STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
   KERN_DEFAULT_PLAN_SLUG: ${KERN_DEFAULT_PLAN_SLUG:-}
+  # Seeds `allowSignup` on the very first boot, and nothing afterwards — an instance that already has
+  # a settings row keeps whatever an admin last chose. `open` is not the default: with no value core
+  # seeds invite-only whenever KERN_ADMIN_EMAIL and a password are set, which this file does, so a
+  # brand-new cloud would come up refusing the sign-ups it exists to take.
+  KERN_SIGNUP: ${KERN_SIGNUP:-open}
 
 services:
   caddy:
