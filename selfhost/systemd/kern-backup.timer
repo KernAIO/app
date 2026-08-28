@@ -1,0 +1,15 @@
+[Unit]
+Description=Take a Kern backup every night
+
+[Timer]
+# 02:00, before the update timer's usual 03:00-05:00 window, so the night's backup is taken from
+# the version that was running all day rather than from one that upgraded an hour earlier.
+OnCalendar=*-*-* 02:00:00
+# Spread the load on a host running several things, and do not make every instance in the world
+# start writing at the same second.
+RandomizedDelaySec=30min
+# A host that was off at 02:00 backs up when it next comes on, rather than skipping the day.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+# Runs kern-backup.sh: a pg_dump of the database, a mirror of the object storage bucket, and the
+# .env and compose files needed to rebuild the stack around them. Old backups are pruned by the
+# script itself, so this unit needs no configuration of its own.
+Description=Kern backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kern
+ExecStart=%h/kern/kern-backup.sh
+# A large bucket takes a while to mirror; a stuck backup must not hold the timer for ever.
+TimeoutStartSec=6h

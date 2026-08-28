@@ -1,67 +1,253 @@
 #!/usr/bin/env bash
 # Kern self-host installer: creates .env with generated secrets, then starts the stack.
-#   curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh | bash
+#
+#   curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
+#   bash install.sh
+#
+# Download it and run it, rather than piping it into bash. Piping makes the script its own standard
+# input, so every question below would be answered with a line of the script instead of by you. The
+# prompts read from /dev/tty for that reason, and the script stops with instructions if there is no
+# terminal to read from.
 set -euo pipefail
+
 DIR="${KERN_DIR:-$HOME/kern}"
 RAW="https://raw.githubusercontent.com/KernAIO/app/main/selfhost"
-mkdir -p "$DIR/postgres-init" && cd "$DIR"
-mkdir -p "$DIR/systemd"
-for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql \
-         kern-upgrade.sh kern-rollback.sh systemd/kern-auto-update.service systemd/kern-auto-update.timer; do
-  [ -f "$f" ] || curl -fsSL "$RAW/$f" -o "$f"
-done
-chmod +x kern-upgrade.sh kern-rollback.sh
-command -v docker >/dev/null || { echo "Docker is required: https://docs.docker.com/get-docker/"; exit 1; }
+FEED_URL="${KERN_FEED_URL:-https://github.com/KernAIO/app/releases/latest/download/releases.json}"
+
+fail() { printf '\n\033[31m✖ %s\033[0m\n' "$1" >&2; exit 1; }
+
+# ---------------------------------------------------------------- the terminal
+
+# `read` without this takes the next line of the script when the script is on stdin.
+#
+# The braces matter: `exec 3</dev/tty 2>/dev/null` opens fd 3 before it applies the 2>, so bash
+# still prints its own "Device not configured" first. Redirecting the group suppresses that, and a
+# brace group is not a subshell, so fd 3 stays open for the rest of the script.
+if [ -e /dev/tty ] && { exec 3</dev/tty; } 2>/dev/null; then
+  :
+else
+  cat >&2 <<'EOS'
+
+✖ This installer asks a few questions and there is no terminal to ask on.
+
+  If you piped this script into bash, the script itself is the standard input, so every answer
+  would be read from the script's own text rather than from you. Download it and run it:
+
+      curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
+      bash install.sh
+
+EOS
+  exit 1
+fi
+
+ask() { # ask <prompt> <varname>
+  local __val
+  printf '%s' "$1" >&2
+  IFS= read -r __val <&3 || fail "No answer (the terminal closed). Nothing has been changed."
+  printf -v "$2" '%s' "$__val"
+}
+
+ask_secret() { # ask_secret <prompt> <varname>
+  local __val
+  printf '%s' "$1" >&2
+  stty -echo <&3 2>/dev/null || true
+  IFS= read -r __val <&3 || { stty echo <&3 2>/dev/null || true; fail "No answer. Nothing has been changed."; }
+  stty echo <&3 2>/dev/null || true
+  printf '\n' >&2
+  printf -v "$2" '%s' "$__val"
+}
+
+yes_no() { # yes_no <prompt> <default y|n>  -> exit status
+  local ans
+  ask "$1" ans
+  [ -n "$ans" ] || ans="$2"
+  [[ "$ans" =~ ^[Yy] ]]
+}
+
+# ---------------------------------------------------------------- .env writing
+
+# Values go in single-quoted. Docker Compose reads a single-quoted .env value literally — no
+# interpolation, no comment stripping — which is the only form that survives a password containing
+# `$`, `"`, `&`, `|`, `#` or a space. Unquoted, `pass$word #1` reaches the container as `pass`.
+#
+# The value never passes through a sed replacement, which is what used to corrupt .env here: sed
+# reads `|`, `&` and `\` in the replacement text as syntax, so those passwords either broke the
+# file or silently changed. awk gets both strings through the environment, where nothing rewrites
+# them, and prints the value with no escape processing at all.
+set_env() { # set_env <KEY> <literal value>
+  local tmp
+  tmp="$(mktemp)" || fail "Could not create a temporary file."
+  K="$1" V="$2" awk '
+    BEGIN { key = ENVIRON["K"]; val = ENVIRON["V"]; done = 0 }
+    !done && index($0, key "=") == 1 { print key "=" q val q; done = 1; next }
+    { print }
+    END { if (!done) print key "=" q val q }
+  ' q="'" "$DIR/.env" > "$tmp" && mv "$tmp" "$DIR/.env"
+}
+
+# A single quote cannot be represented inside a single-quoted .env value — the parser stops at the
+# first one and there is no escape for it — so it is the one character we have to refuse.
+has_quote() { case "$1" in *\'*) return 0 ;; *) return 1 ;; esac; }
+
 gen() { openssl rand -hex 32; }
+
+# ---------------------------------------------------------------- files
+
+mkdir -p "$DIR/postgres-init" "$DIR/systemd" && cd "$DIR"
+for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql \
+         kern-upgrade.sh kern-rollback.sh kern-backup.sh \
+         systemd/kern-auto-update.service systemd/kern-auto-update.timer \
+         systemd/kern-backup.service systemd/kern-backup.timer; do
+  [ -f "$f" ] || curl -fsSL "$RAW/$f" -o "$f" || fail "Could not download $f."
+done
+chmod +x kern-upgrade.sh kern-rollback.sh kern-backup.sh
+command -v docker >/dev/null || fail "Docker is required: https://docs.docker.com/get-docker/"
+command -v openssl >/dev/null || fail "openssl is required to generate secrets."
+
+# ---------------------------------------------------------------- version
+
+# Never `latest`. A rollback records the version it came from, so an instance on `latest` snapshots
+# `from-version: latest` and rolling back re-pins the release it just moved to — a no-op that
+# reports success. `latest` also lets a pull landing mid-release give five services five different
+# builds, which is the drift docs/adr/0002 exists to prevent.
+if [ -n "${KERN_VERSION:-}" ]; then
+  VERSION="$KERN_VERSION"
+else
+  echo "==> Asking which release is newest"
+  VERSION="$(curl -fsSL "$FEED_URL" 2>/dev/null \
+    | python3 -c 'import base64,json,sys; d=json.load(sys.stdin); f=json.loads(base64.b64decode(d["payload"])); print(sorted((r["version"] for r in f["releases"] if r["channel"]=="stable"), key=lambda v: [int(p) for p in v.split("-")[0].split(".")])[-1])' \
+    2>/dev/null)" || VERSION=""
+fi
+if [ -z "$VERSION" ]; then
+  cat >&2 <<EOS
+
+✖ Could not work out which release is newest, and this installer will not pin \`latest\`:
+  rollback records the version you came from, and "latest" is not one.
+
+  Pick a version from https://github.com/KernAIO/app/releases and run:
+
+      KERN_VERSION=1.2.0 bash install.sh
+
+EOS
+  exit 1
+fi
+echo "    installing Kern $VERSION"
+
+# ---------------------------------------------------------------- .env
+
 if [ ! -f .env ]; then
   cp .env.example .env
-  read -rp "Domain or IP for Kern (e.g. kern.example.com or 192.168.1.10): " DOMAIN
-  read -rp "Admin email (for Let's Encrypt + first admin): " EMAIL
-  read -rsp "Admin password: " PASS; echo
-  PROTO=https; ACME="$EMAIL"
-  if [[ "$DOMAIN" =~ ^[0-9.]+$ || "$DOMAIN" == "localhost" ]]; then PROTO=https; ACME="internal"; fi
-  sed -i.bak \
-    -e "s|^KERN_DOMAIN=.*|KERN_DOMAIN=$DOMAIN|" \
-    -e "s|^KERN_BASE_URL=.*|KERN_BASE_URL=$PROTO://$DOMAIN|" \
-    -e "s|^ACME_EMAIL=.*|ACME_EMAIL=$ACME|" \
-    -e "s|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=$PROTO://$DOMAIN/s3|" \
-    -e "s|^KERN_SECRET=.*|KERN_SECRET=$(gen)|" \
-    -e "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(gen)|" \
-    -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(gen)|" \
-    -e "s|^S3_SECRET_KEY=.*|S3_SECRET_KEY=$(gen)|" \
-    -e "s|^LIVEKIT_API_KEY=.*|LIVEKIT_API_KEY=kern$(openssl rand -hex 4)|" \
-    -e "s|^LIVEKIT_API_SECRET=.*|LIVEKIT_API_SECRET=$(gen)|" \
-    -e "s|^KERN_ADMIN_EMAIL=.*|KERN_ADMIN_EMAIL=$EMAIL|" \
-    -e "s|^KERN_ADMIN_PASSWORD=.*|KERN_ADMIN_PASSWORD=$PASS|" \
-    -e "s|^MAIL_FROM=.*|MAIL_FROM=\"Kern <no-reply@$DOMAIN>\"|" .env && rm -f .env.bak
+
+  ask "Domain or IP for Kern (e.g. kern.example.com or 192.168.1.10): " DOMAIN
+  [ -n "$DOMAIN" ] || fail "A domain or IP is required."
+
+  while :; do
+    ask "Admin email (for Let's Encrypt + first admin): " EMAIL
+    case "$EMAIL" in
+      ?*@?*.?*) break ;;
+      *) echo "   That does not look like an email address. This account becomes an instance" >&2
+         echo "   administrator and is the only way back in, so it has to be one you can read." >&2 ;;
+    esac
+  done
+
+  while :; do
+    ask_secret "Admin password: " PASS
+    if [ -z "$PASS" ]; then
+      echo "   A password is required." >&2
+    elif has_quote "$PASS"; then
+      echo "   A single quote cannot be stored in .env. Please choose a password without one." >&2
+    else
+      break
+    fi
+  done
+
+  PROTO=https
+  ACME="$EMAIL"
+  # An IP address or `localhost` can never get a public certificate, so Caddy issues its own. The
+  # browser will warn once; that is expected on a LAN install.
+  if [[ "$DOMAIN" =~ ^[0-9.]+$ || "$DOMAIN" =~ ^\[?[0-9a-fA-F:]+\]?$ || "$DOMAIN" == "localhost" ]]; then
+    ACME="internal"
+    echo "   $DOMAIN has no public certificate, so Kern will use a self-signed one." >&2
+  fi
+
+  set_env KERN_DOMAIN           "$DOMAIN"
+  set_env KERN_BASE_URL         "$PROTO://$DOMAIN"
+  set_env ACME_EMAIL            "$ACME"
+  set_env KERN_VERSION          "$VERSION"
+  set_env KERN_DIR              "$DIR"
+  # The bare origin, with no path. Presigned URLs are SigV4 signatures over the canonical path, and
+  # Caddy routes /<bucket>/* to MinIO without stripping anything, so the path MinIO receives is the
+  # path core signed. The `/s3` prefix this used to write made every upload and download 403.
+  set_env S3_PUBLIC_ENDPOINT    "$PROTO://$DOMAIN"
+  set_env KERN_SECRET           "$(gen)"
+  set_env BETTER_AUTH_SECRET    "$(gen)"
+  set_env POSTGRES_PASSWORD     "$(gen)"
+  set_env KERN_DB_APP_PASSWORD  "$(gen)"
+  set_env S3_SECRET_KEY         "$(gen)"
+  set_env LIVEKIT_API_KEY       "kern$(openssl rand -hex 4)"
+  set_env LIVEKIT_API_SECRET    "$(gen)"
+  set_env KERN_ADMIN_EMAIL      "$EMAIL"
+  set_env KERN_ADMIN_PASSWORD   "$PASS"
+  set_env MAIL_FROM             "Kern <no-reply@$DOMAIN>"
+  chmod 600 .env
   echo "✔ .env created"
+else
+  # An existing instance: fill in anything this version of the installer added, and leave the rest.
+  grep -q "^KERN_DIR=" .env || set_env KERN_DIR "$DIR"
+  if ! grep -q "^KERN_DB_APP_PASSWORD='.\+'" .env; then
+    set_env KERN_DB_APP_PASSWORD "$(gen)"
+    echo "✔ generated KERN_DB_APP_PASSWORD (the services stop connecting as the database superuser)"
+  fi
+  echo "✔ .env already exists, left alone"
 fi
+
+# ---------------------------------------------------------------- optional services
+
 PROFILES=""
-read -rp "Enable video calls (LiveKit)? [y/N] " yn; [[ "$yn" =~ ^[Yy] ]] && PROFILES="$PROFILES --profile calls"
-read -rp "Enable office/PDF previews (Gotenberg)? [y/N] " yn; [[ "$yn" =~ ^[Yy] ]] && PROFILES="$PROFILES --profile preview"
-# The timer only ever asks the instance whether it may upgrade; nothing happens until an admin
-# turns automatic updates on in Admin -> Updates. Installing it now saves finding out later that
-# the switch in the interface had nothing behind it.
+yes_no "Enable video calls (LiveKit)? [y/N] " n && PROFILES="$PROFILES --profile calls"
+yes_no "Enable office/PDF previews (Gotenberg)? [y/N] " n && PROFILES="$PROFILES --profile preview"
+
+# ---------------------------------------------------------------- timers
+
 if command -v systemctl >/dev/null && [ -d "$HOME/.config" ]; then
-  read -rp "Install the update timer, so Kern can update itself if you switch that on later? [Y/n] " yn
-  if [[ ! "$yn" =~ ^[Nn] ]]; then
-    mkdir -p "$HOME/.config/systemd/user"
+  mkdir -p "$HOME/.config/systemd/user"
+
+  # The update timer only ever asks the instance whether it may upgrade; nothing happens until an
+  # admin turns automatic updates on in Admin -> Updates. Installing it now saves finding out later
+  # that the switch in the interface had nothing behind it.
+  if yes_no "Install the update timer, so Kern can update itself if you switch that on later? [Y/n] " y; then
     cp systemd/kern-auto-update.service systemd/kern-auto-update.timer "$HOME/.config/systemd/user/"
     systemctl --user daemon-reload
     systemctl --user enable --now kern-auto-update.timer
     loginctl enable-linger "$USER" >/dev/null 2>&1 || true
     echo "✔ update timer installed (systemctl --user list-timers kern-auto-update)"
   fi
+
+  if yes_no "Install the nightly backup timer (database, files, and this configuration)? [Y/n] " y; then
+    cp systemd/kern-backup.service systemd/kern-backup.timer "$HOME/.config/systemd/user/"
+    systemctl --user daemon-reload
+    systemctl --user enable --now kern-backup.timer
+    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+    echo "✔ backup timer installed (backups in $DIR/backups; ./kern-backup.sh runs one now)"
+  fi
 else
-  echo "ℹ No systemd here. For automatic updates, run the updater service instead:"
-  echo "    docker compose --profile autoupdate up -d"
-  echo "  It needs the Docker socket, which gives it control of this host — read the docs first."
+  echo "ℹ No systemd here."
+  echo "  Backups:          run ./kern-backup.sh from cron."
+  echo "  Automatic updates: docker compose --profile autoupdate up -d"
+  echo "  The updater needs the Docker socket, which gives it control of this host — read the docs first."
 fi
 
+# ---------------------------------------------------------------- start
+
+# $PROFILES has to word-split: it holds "--profile calls --profile preview" as separate arguments.
+# shellcheck disable=SC2086
 docker compose $PROFILES pull
+# shellcheck disable=SC2086
 docker compose $PROFILES up -d
+
 echo
-echo "🎉 Kern is starting. Open: $(grep ^KERN_BASE_URL .env | cut -d= -f2)"
+echo "🎉 Kern $VERSION is starting. Open: $(grep '^KERN_BASE_URL=' .env | cut -d= -f2- | tr -d "'")"
 echo "   Logs:    docker compose logs -f"
-echo "   Upgrade: ./kern-upgrade.sh          (snapshots first, then applies)"
+echo "   Backup:  ./kern-backup.sh                (database + files + this configuration)"
+echo "   Upgrade: ./kern-upgrade.sh               (snapshots first, then applies)"
 echo "   Undo:    ./kern-rollback.sh"

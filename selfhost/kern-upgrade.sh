@@ -49,7 +49,44 @@ if [ "$AUTO" = true ]; then
 fi
 
 compose() { docker compose "$@"; }
-env_value() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '"'; }
+# Values are written single-quoted (a password may contain `$`, `#` or a space, and only a
+# single-quoted .env value survives that), so strip one enclosing quote of either kind.
+env_value() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | sed -e "s/^['\"]//" -e "s/['\"]\$//"; }
+
+# Write a value into .env without going through sed's replacement parsing, where `&`, `|` and `\`
+# are syntax. Same helper as install.sh's, for the same reason.
+set_env() { # set_env <KEY> <literal value>
+  local tmp
+  tmp="$(mktemp)" || fail "Could not create a temporary file."
+  K="$1" V="$2" awk '
+    BEGIN { key = ENVIRON["K"]; val = ENVIRON["V"]; done = 0 }
+    !done && index($0, key "=") == 1 { print key "=" q val q; done = 1; next }
+    { print }
+    END { if (!done) print key "=" q val q }
+  ' q="'" .env > "$tmp" && mv "$tmp" .env
+}
+
+# Ask a running service what version it is actually on. The images are node:24-slim — no wget, no
+# curl — and every service listens on IPv4 only, so `localhost` resolves to ::1 and is refused.
+# `node -e fetch(127.0.0.1)` is the shape the Dockerfile HEALTHCHECK uses and the only one that works.
+reported_version() { # reported_version <service> <port>
+  compose exec -T "$1" node -e "
+    fetch('http://127.0.0.1:$2/api/health')
+      .then(r => r.json()).then(j => console.log(j.version)).catch(() => console.log(''))
+  " 2>/dev/null | tr -d '[:space:]'
+}
+
+wait_ready() { # wait_ready <service> <port> <attempts, 2s apart>
+  local _attempt
+  for _attempt in $(seq 1 "$3"); do
+    if compose exec -T "$1" node -e "
+      fetch('http://127.0.0.1:$2/api/ready')
+        .then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))
+    " >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
 
 CURRENT="$(env_value KERN_VERSION)"
 [ -n "$CURRENT" ] || fail "KERN_VERSION is not set in .env."
@@ -105,9 +142,25 @@ NEED_KB="$(( DB_BYTES * 2 / 1024 ))"
   || fail "Not enough disk space for a snapshot: need about $(( NEED_KB / 1024 )) MB, $(( FREE_KB / 1024 )) MB free."
 info "disk space is enough for a snapshot"
 
+step "Pulling $TARGET"
+# Before the dry run, because the dry run has to execute the *target* image to say anything about
+# the target release, and before the snapshot, so a pull that fails costs nothing.
+#
+# KERN_VERSION goes in the environment rather than in `-e`: `-e` sets a variable inside the
+# container, which does not change the image tag Compose interpolated from .env — so the dry run
+# used to run the OLD image and report on the release the instance was already on. A shell variable
+# takes precedence over .env when Compose interpolates `${KERN_VERSION}`, which is what actually
+# selects the image.
+KERN_VERSION="$TARGET" compose pull || fail "Could not pull the $TARGET images. Nothing has been changed."
+
 step "Checking what the migrations would do"
-compose run --rm -e "KERN_VERSION=$TARGET" core node dist/migrate.js --check \
+KERN_VERSION="$TARGET" compose run --rm --no-deps core node dist/migrate.js --check \
   || fail "The migration dry run failed. Nothing has been changed."
+# What that dry run covers: core's own schema and every module core hosts. It does not cover chat,
+# mail or collab, which own module schemas and migrate them inside their own boot — there is no
+# migrate entrypoint in those images to ask. The upgrade compensates by keeping maintenance mode on
+# until those services are up and past their migrations, rather than by pretending to know first.
+info "covers core and the modules core hosts; chat, mail and collab migrate at boot, under maintenance"
 
 if [ "$CHECK_ONLY" = true ]; then
   printf '\n\033[32m✔ Preflight passed. Nothing was changed.\033[0m\n'
@@ -125,8 +178,30 @@ compose exec -T postgres pg_dump -U "$(env_value POSTGRES_USER)" -Fc "$(env_valu
 cp .env "$SNAP/.env"
 cp docker-compose.yml "$SNAP/docker-compose.yml"
 [ -f Caddyfile ] && cp Caddyfile "$SNAP/Caddyfile"
-printf '%s\n' "$CURRENT" > "$SNAP/from-version"
-info "snapshot: $SNAP"
+
+# What rollback re-pins. `latest` is not a version you can go back to — it is a moving pointer, and
+# after this upgrade it points at TARGET, so recording it would make kern-rollback.sh a no-op that
+# reports success. An instance installed before install.sh started pinning is on `latest`, so ask
+# the running core what it actually is: the number is baked into the image, so it cannot be wrong.
+FROM="$CURRENT"
+if [ "$CURRENT" = "latest" ] || [ "$CURRENT" = "main" ]; then
+  RESOLVED="$(reported_version core 4000)"
+  if [ -n "$RESOLVED" ]; then
+    FROM="$RESOLVED"
+    info "KERN_VERSION was \"$CURRENT\"; core reports $RESOLVED, so that is what rollback will use"
+  else
+    info "KERN_VERSION is \"$CURRENT\" and core could not be asked what it is running."
+    info "A rollback from this snapshot will refuse; pin KERN_VERSION to a number to fix that."
+  fi
+fi
+printf '%s\n' "$FROM" > "$SNAP/from-version"
+
+# Object storage is NOT in this snapshot: it holds the database, .env and the compose files, and
+# nothing else. A file uploaded after it was taken still exists after a rollback, but a rollback
+# with --database restores rows that no longer know about it — and rows deleted since will point at
+# objects that were already removed. ./kern-backup.sh is the one that mirrors the bucket.
+printf 'database, .env, docker-compose.yml, Caddyfile. NOT object storage.\n' > "$SNAP/contents"
+info "snapshot: $SNAP (database and configuration only — not object storage)"
 
 # keep the last few and no more, so snapshots cannot fill the disk on their own
 if [ -d "$SNAPSHOT_DIR" ]; then
@@ -150,45 +225,67 @@ undo() {
 # ---------------------------------------------------------------- apply
 
 step "Closing the API while the database changes"
-compose run --rm -e "KERN_VERSION=$TARGET" core node dist/migrate.js --maintenance on \
+KERN_VERSION="$TARGET" compose run --rm --no-deps core node dist/migrate.js --maintenance on \
   || undo "Could not turn maintenance mode on."
 
-step "Pulling $TARGET"
-sed -i.bak "s|^KERN_VERSION=.*|KERN_VERSION=$TARGET|" .env && rm -f .env.bak
-compose pull || undo "Could not pull the $TARGET images."
+step "Pinning $TARGET"
+set_env KERN_VERSION "$TARGET"
 
 step "Migrating"
-compose run --rm core node dist/migrate.js || undo "The migrations failed."
+compose run --rm --no-deps core node dist/migrate.js || undo "The migrations failed."
 
 step "Starting core"
 compose up -d core core-worker || undo "core did not start."
-for i in $(seq 1 60); do
-  if compose exec -T core wget -qO- http://localhost:4000/api/ready >/dev/null 2>&1; then break; fi
-  [ "$i" -lt 60 ] || undo "core did not become ready."
-  sleep 2
-done
+wait_ready core 4000 60 || undo "core did not become ready."
 info "core is ready"
 
-step "Opening the API again"
-compose run --rm core node dist/migrate.js --maintenance off || undo "Could not turn maintenance mode off."
-
+# Everything else comes up while maintenance is still on, on purpose. chat, mail and collab each own
+# module schemas and migrate them inside their own boot, so turning maintenance off before they had
+# started — which is what used to happen here — ran their schema changes with the API already open
+# to users. They are the migrations the dry run above cannot see, so they are the ones that most
+# need the door shut.
 step "Starting everything else"
 compose up -d || undo "Not every service started."
+
+step "Waiting for the services that migrate at boot"
+for pair in "chat 4100" "mail 4200" "collab 4300"; do
+  # deliberate split of "<service> <port>" into $1 and $2
+  # shellcheck disable=SC2086
+  set -- $pair
+  compose ps --status running --quiet "$1" >/dev/null 2>&1 || continue
+  wait_ready "$1" "$2" 60 || undo "$1 did not become ready, so its migrations may not have finished."
+  info "$1 is ready"
+done
+
+step "Opening the API again"
+compose run --rm --no-deps core node dist/migrate.js --maintenance off \
+  || undo "Could not turn maintenance mode off."
 
 # ---------------------------------------------------------------- verify
 
 step "Checking every service reports $TARGET"
 sleep 5
 FAILED=""
-for svc in core chat mail collab; do
-  compose ps --status running --quiet "$svc" >/dev/null 2>&1 || continue
-  REPORTED="$(compose exec -T "$svc" node -e "
-    const port = {core:4000, chat:4100, mail:4200, collab:4300}['$svc']
-    fetch('http://127.0.0.1:'+port+'/api/health')
-      .then(r => r.json()).then(j => console.log(j.version)).catch(() => console.log(''))
-  " 2>/dev/null | tr -d '[:space:]')"
-  if [ "$REPORTED" = "$TARGET" ]; then info "$svc: $REPORTED"; else FAILED="$FAILED $svc($REPORTED)"; fi
+for pair in "core 4000" "chat 4100" "mail 4200" "collab 4300"; do
+  # deliberate split of "<service> <port>" into $1 and $2
+  # shellcheck disable=SC2086
+  set -- $pair
+  compose ps --status running --quiet "$1" >/dev/null 2>&1 || continue
+  REPORTED="$(reported_version "$1" "$2")"
+  if [ "$REPORTED" = "$TARGET" ]; then info "$1: $REPORTED"; else FAILED="$FAILED $1($REPORTED)"; fi
 done
+
+# app is the web front end and has no /api/health to ask — its own healthcheck fetches `/`. So it is
+# checked by the image it is running, which is the thing an upgrade actually changes. Skipping it
+# entirely, as this loop used to, meant a shell left on the old build passed the upgrade.
+if compose ps --status running --quiet app >/dev/null 2>&1; then
+  APP_IMAGE="$(compose ps --format '{{.Image}}' app 2>/dev/null | tr -d '[:space:]')"
+  case "$APP_IMAGE" in
+    *:"$TARGET") info "app: $APP_IMAGE" ;;
+    *) FAILED="$FAILED app($APP_IMAGE)" ;;
+  esac
+fi
+
 [ -z "$FAILED" ] || undo "These services are not on $TARGET:$FAILED"
 
 if [ "$AUTO" = true ]; then

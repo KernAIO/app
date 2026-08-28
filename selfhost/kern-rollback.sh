@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Go back to the version an upgrade snapshot was taken from.
 #
-#   ./kern-rollback.sh                       use the newest snapshot
+#   ./kern-rollback.sh                          use the newest snapshot
 #   ./kern-rollback.sh snapshots/1.1.0-to-1.2.0-20260822-140301
-#   ./kern-rollback.sh <snapshot> --database  also restore the database
+#   ./kern-rollback.sh <snapshot> --database    also restore the database
+#   ./kern-rollback.sh <snapshot> --version X   go back to X, whatever the snapshot recorded
 #
 # Images roll back on their own. The database does not: migrations only go forwards. Within a minor
 # release that is fine, because a migration must stay compatible with the image before it — so the
@@ -23,12 +24,16 @@ fail() { printf '\n\033[31m✖ %s\033[0m\n' "$1" >&2; exit 1; }
 
 RESTORE_DB=false
 SNAP=""
-for arg in "$@"; do
-  case "$arg" in
+WANT_VERSION=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --database) RESTORE_DB=true ;;
-    -*) fail "Unknown option: $arg" ;;
-    *) SNAP="$arg" ;;
+    --version) shift; [ $# -gt 0 ] || fail "--version needs a version, e.g. --version 1.2.0"; WANT_VERSION="$1" ;;
+    --version=*) WANT_VERSION="${1#--version=}" ;;
+    -*) fail "Unknown option: $1" ;;
+    *) SNAP="$1" ;;
   esac
+  shift
 done
 
 if [ -z "$SNAP" ]; then
@@ -39,8 +44,43 @@ SNAP="${SNAP%/}"
 [ -d "$SNAP" ] || fail "No such snapshot: $SNAP"
 [ -f "$SNAP/from-version" ] || fail "$SNAP has no from-version file, so there is nothing to go back to."
 
-FROM="$(cat "$SNAP/from-version")"
-CURRENT="$(grep -E '^KERN_VERSION=' .env | head -1 | cut -d= -f2- | tr -d '"')"
+env_value() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | sed -e "s/^['\"]//" -e "s/['\"]\$//"; }
+
+set_env() { # set_env <KEY> <literal value>, without sed's replacement parsing
+  local tmp
+  tmp="$(mktemp)" || fail "Could not create a temporary file."
+  K="$1" V="$2" awk '
+    BEGIN { key = ENVIRON["K"]; val = ENVIRON["V"]; done = 0 }
+    !done && index($0, key "=") == 1 { print key "=" q val q; done = 1; next }
+    { print }
+    END { if (!done) print key "=" q val q }
+  ' q="'" .env > "$tmp" && mv "$tmp" .env
+}
+
+FROM="$(tr -d '[:space:]' < "$SNAP/from-version")"
+CURRENT="$(env_value KERN_VERSION)"
+[ -z "$WANT_VERSION" ] || FROM="$WANT_VERSION"
+
+# A moving tag is not somewhere to go back to. `latest` means "the newest release", which after the
+# upgrade is the version you are trying to leave — so re-pinning it would pull the same images,
+# report success, and change nothing at all. Say so instead of doing that.
+case "$FROM" in
+  latest|main|"")
+    fail "$(printf '%s\n' \
+      "This snapshot records from-version \"$FROM\", which is not a version." \
+      "" \
+      "\"latest\" moves: it now points at the release you are trying to leave, so putting it back" \
+      "would pull the same images and change nothing while reporting success." \
+      "" \
+      "Pick the release you want from https://github.com/KernAIO/app/releases, then:" \
+      "" \
+      "    ./kern-rollback.sh $SNAP --version 1.2.0" \
+      "" \
+      "Newer instances record a real number here — install.sh pins one, and kern-upgrade.sh asks" \
+      "core what it is running when .env still says \"latest\".")"
+    ;;
+esac
+
 info "Now:        $CURRENT"
 info "Going back to: $FROM"
 info "Snapshot:   $SNAP"
@@ -52,20 +92,31 @@ if [ "$RESTORE_DB" = true ]; then
   [ -f "$SNAP/database.dump" ] || fail "$SNAP has no database.dump."
   printf '\n\033[31mThis replaces the database with the snapshot. Everything written since %s is lost.\033[0m\n' \
     "$(basename "$SNAP")"
-  read -rp "Type the word restore to continue: " confirm
+  # Object storage is not in an upgrade snapshot, so the two go back to different moments: rows
+  # restored from the dump can refer to files deleted since, and files uploaded since will have no
+  # row pointing at them. ./kern-backup.sh is the one that captures both together.
+  printf '\033[31mThe snapshot holds no files. Attachments uploaded since it was taken will be\n'
+  printf 'orphaned, and rows it restores may point at objects that have since been deleted.\033[0m\n'
+  confirm=""
+  if [ -e /dev/tty ]; then
+    printf 'Type the word restore to continue: '
+    IFS= read -r confirm </dev/tty || confirm=""
+  else
+    fail "No terminal to confirm on. Run this from a terminal — it destroys data."
+  fi
   [ "$confirm" = "restore" ] || fail "Nothing was changed."
 
   step "Restoring the database"
   docker compose stop core core-worker chat mail collab app >/dev/null 2>&1 || true
   docker compose exec -T postgres pg_restore \
-    -U "$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)" \
-    -d "$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)" \
+    -U "$(env_value POSTGRES_USER)" \
+    -d "$(env_value POSTGRES_DB)" \
     --clean --if-exists < "$SNAP/database.dump" || fail "The restore failed. The instance is down; fix this before starting it."
   info "database restored"
 fi
 
 step "Putting $FROM back"
-sed -i.bak "s|^KERN_VERSION=.*|KERN_VERSION=$FROM|" .env && rm -f .env.bak
+set_env KERN_VERSION "$FROM"
 docker compose pull
 docker compose up -d
 
