@@ -177,8 +177,6 @@ jobs:
             done
           done
 
-      # Publishing the release is what triggers release-feed.yml, which signs the feed and then
-      # dispatches rollout.yml. Everything after this point is automatic.
       - name: Publish the release
         if: steps.changed.outputs.value == 'true'
         env:
@@ -190,3 +188,17 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "$V" \
             --generate-notes
+
+      # Creating the release with GITHUB_TOKEN does not fire this repository's `release:` event —
+      # GitHub suppresses events a workflow's own token caused (workflow_dispatch is the one
+      # exception), so release-feed.yml never ran on its own. Dispatch it by name instead; the
+      # feed signs the release into releases.json and then dispatches rollout.yml itself.
+      - name: Hand the release to the feed
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run release-feed.yml \
+            --repo "${{ github.repository }}" \
+            --field version="${{ steps.v.outputs.next }}" \
+            --field schema=additive

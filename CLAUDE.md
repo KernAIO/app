@@ -291,6 +291,12 @@ Mailpit for `mail`. Things learned the hard way:
   back.
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
+- **A workflow that creates a release with `GITHUB_TOKEN` does not fire this repository's own
+  `release:` event.** GitHub suppresses events caused by a run's own token — that is why
+  `release-feed.yml` sat untriggered through months of releases while its `on.release` looked
+  perfectly correct. `workflow_dispatch` and `repository_dispatch` via the API are the exceptions:
+  they fire even from `GITHUB_TOKEN` (the rollout dispatch from the feed proves it). So
+  `release.yml` dispatches the feed by name after publishing, instead of relying on the event.
 
 ## Writing
 Documentation — READMEs, guides, runbooks, `docs/`, ADRs, and any procedure someone follows — uses
