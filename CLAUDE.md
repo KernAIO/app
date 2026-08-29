@@ -294,9 +294,12 @@ Mailpit for `mail`. Things learned the hard way:
 - **A workflow that creates a release with `GITHUB_TOKEN` does not fire this repository's own
   `release:` event.** GitHub suppresses events caused by a run's own token — that is why
   `release-feed.yml` sat untriggered through months of releases while its `on.release` looked
-  perfectly correct. `workflow_dispatch` and `repository_dispatch` via the API are the exceptions:
-  they fire even from `GITHUB_TOKEN` (the rollout dispatch from the feed proves it). So
-  `release.yml` dispatches the feed by name after publishing, instead of relying on the event.
+  perfectly correct. `workflow_dispatch` via the API is the escape hatch, but it needs the job's
+  token to hold **`actions: write`** — with the default `contents: write` the API answers
+  `403 Resource not accessible by integration`, which is how the first forced release died at its
+  last step. So `release.yml` carries `actions: write` and dispatches the feed by name after
+  publishing; `release-feed.yml` had the permission all along, which is why its rollout dispatch
+  always worked.
 
 ## Writing
 Documentation — READMEs, guides, runbooks, `docs/`, ADRs, and any procedure someone follows — uses

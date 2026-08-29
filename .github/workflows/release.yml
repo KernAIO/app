@@ -27,7 +27,7 @@ on:
         default: false
         type: boolean
 
-permissions: { contents: write }
+permissions: { contents: write, actions: write }
 concurrency:
   group: release
   cancel-in-progress: false
