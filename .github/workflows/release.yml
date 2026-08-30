@@ -177,17 +177,89 @@ jobs:
             done
           done
 
-      - name: Publish the release
+      - name: Publish the release notes
         if: steps.changed.outputs.value == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVICES_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           V='v${{ steps.v.outputs.next }}'
-          gh release create "$V" \
-            --repo "${{ github.repository }}" \
-            --title "$V" \
-            --generate-notes
+          PREV='v${{ steps.v.outputs.prev }}'
+          WORK=$(mktemp -d)
+
+          # One section per service repository: its commits since the previous version, grouped
+          # by Conventional Commit type. The repositories are held to the convention, so this is
+          # a read of the log, not a judgement call — and the same section becomes that
+          # repository's own GitHub release, so its Releases tab is a changelog in its own right.
+          for repo in $SERVICES; do
+            if [ "$PREV" = "v0.0.0" ]; then
+              LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" \
+                      --jq '.[].commit.message | split("\n")[0]' 2>/dev/null || true)
+            else
+              LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/compare/$PREV...main" \
+                      --jq '.commits[] | .commit.message | split("\n")[0]' 2>/dev/null || true)
+            fi
+            # Version commits are bookkeeping, not changelog.
+            LOG=$(echo "$LOG" | grep -v '^chore: version' | sort -u || true)
+            [ -n "$LOG" ] || continue
+            echo "$LOG" | grep -c . > "$WORK/$repo.count"
+            FILE="$WORK/$repo.md"
+            {
+              echo "### $repo"
+              echo
+              for TYPE in feat fix perf refactor docs test ci; do
+                GROUP=$(echo "$LOG" | grep -E "^$type" || true)
+                [ -n "$GROUP" ] || continue
+                echo "**${TYPE^}**"
+                echo
+                echo "$GROUP" | sed 's/^/- /'
+                echo
+              done
+              OTHER=$(echo "$LOG" | grep -vE '^(feat|fix|perf|refactor|docs|test|ci|chore)' || true)
+              if [ -n "$OTHER" ]; then
+                echo "**Other**"
+                echo
+                echo "$OTHER" | sed 's/^/- /'
+                echo
+              fi
+              echo "[compare $PREV...$V](https://github.com/KernAIO/$repo/compare/$PREV...$V)"
+              echo
+            } > "$FILE"
+          done
+
+          {
+            echo "One platform version — every image and every module inside it carries \`$V\`."
+            echo
+            echo "| repository | moved |"
+            echo "|:-----------|:------|"
+            for repo in $SERVICES; do
+              if [ -f "$WORK/$repo.count" ]; then
+                echo "| [$repo](https://github.com/KernAIO/$repo) | $(cat "$WORK/$repo.count") commits |"
+              else
+                echo "| $repo | no change |"
+              fi
+            done
+            echo
+            for repo in $SERVICES; do
+              [ -f "$WORK/$repo.md" ] && cat "$WORK/$repo.md"
+            done
+          } > "$WORK/body.md"
+
+          if gh release view "$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$V" --repo "${{ github.repository }}" --notes-file "$WORK/body.md"
+          else
+            gh release create "$V" --repo "${{ github.repository }}" --title "$V" --notes-file "$WORK/body.md"
+          fi
+
+          # The same section becomes the service repository's own release — its Releases tab is
+          # a changelog, not a list of bare v-tags the umbrella created over there.
+          for repo in $SERVICES; do
+            [ -f "$WORK/$repo.md" ] || continue
+            if gh release view "$V" --repo "KernAIO/$repo" >/dev/null 2>&1; then continue; fi
+            GH_TOKEN="$SERVICES_TOKEN" gh release create "$V" \
+              --repo "KernAIO/$repo" --title "Kern $V" --notes-file "$WORK/$repo.md"
+          done
 
       # Creating the release with GITHUB_TOKEN does not fire this repository's `release:` event —
       # GitHub suppresses events a workflow's own token caused (workflow_dispatch is the one
