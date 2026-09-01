@@ -52,7 +52,8 @@ backup. Public container images.
 
 Cut from v1.0 on 2026-08-22, in order to finish the above rather than start these:
 
-**Drive** · **Calendar** · **HR** (employees, org chart, leave, onboarding) · **Recruiting**
+**Drive** · **Calendar** · **HR** (only onboarding remains — directory, org chart, offices, leave,
+attendance and approvals are built, see below) · **Recruiting**
 (vacancies, pipeline, interviews, career page) · **CRM** (contacts, companies, deals) ·
 **Automation** rules engine and visual builder · **Calls** (LiveKit) · **AI assistant** ·
 **Personal mail inbox** (your own IMAP account inside Kern) · **Outgoing webhooks** ·
@@ -60,6 +61,21 @@ Cut from v1.0 on 2026-08-22, in order to finish the above rather than start thes
 
 The workflow state machine that HR leave and recruiting pipelines would use is already built and in
 use by the tracker, so those modules start from a foundation rather than from nothing.
+
+## Built beyond the v1.0 scope
+
+Three first-party modules are built, published on npm and registered in the shell, but stand
+outside the v1.0 finish line on purpose — they ride the shared platform (kernel, i18n, releases)
+without the v1.0 bar that every server capability be reachable from the interface:
+
+- **HR** (`@kernhq/module-hr`) — a directory of people, an org chart, offices, leave, attendance
+  and an approvals inbox, all with working screens. Cut from v1.0 on 2026-08-22 and built anyway;
+  onboarding is the part that is still missing.
+- **Billing** (`@kernhq/module-billing`) — plans, subscriptions and entitlements. The cloud
+  instance's plan catalogue is its data; it is administered from the core admin console (plans and
+  subscriptions) and workspace settings rather than a sidebar section.
+- **Inventory** (`@kernhq/module-inventory`) — the company's asset register in one view: what it
+  owns, who holds each item, purchase and warranty details, and a full history of every change.
 
 ## v1.x and beyond
 
