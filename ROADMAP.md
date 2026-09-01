@@ -107,9 +107,9 @@ code type-checks.
 4. **Anyone can install it.** The images are public, the one-command install works on a clean
    machine, and the documentation site is live.
 5. **It works in four languages.** German, Persian, Arabic and Turkish ship alongside English, and
-   coverage is measured, not guessed: `app/scripts/i18n-coverage.mjs` counts 4,016 user-facing
-   strings across the shell and the modules, of which German is missing 296 translations, Turkish
-   180, Arabic 175 and Persian 165 (as of 2026-09-01). Right-to-left
+   coverage is measured, not guessed: `app/scripts/i18n-coverage.mjs` counts 3,892 user-facing
+   strings across the shell and the modules, of which German is missing 166 translations, Turkish
+   56, Arabic 51 and Persian 41 (as of 2026-09-01). Right-to-left
    verified on every screen, not only the ones we remembered.
 6. **It is safe to run.** A security review, the outstanding findings from the interface and service
    audits, and a permission matrix that is tested rather than assumed.

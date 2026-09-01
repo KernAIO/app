@@ -10,6 +10,8 @@
  * A string counts as UNTRANSLATED when the locale's value is identical to the English value
  * (a copy, not a translation). MISSING means the key is absent from that locale's bundle.
  * Both are reported; leaves are counted individually, so a plural entry is two strings.
+ * The shell surface excludes the inlang structural leaves of a variant message — its
+ * `declarations` and `selectors` are ICU logic, the same in every locale on purpose.
  *
  * Usage: node scripts/i18n-coverage.mjs [--root /path/to/kern]
  * Prints a markdown table plus per-module detail. Exit 1 only when a surface cannot be read.
@@ -43,6 +45,16 @@ const flat = (v, prefix = '') => {
   return out
 }
 
+/**
+ * Leaves of an inlang variant message that carry no human-readable text.
+ *
+ * A shell plural is an array of one message object whose `declarations` ("input count",
+ * "local n = count: number") and `selectors` ("countPlural") are ICU logic, identical in every
+ * locale by design — only the `match` values are prose. Counting them as "still English" put 124
+ * phantom strings in German's untranslated column, a false alarm larger than the real gap.
+ */
+const isInlangStructure = (key) => /\.(declarations|selectors)\.\d+$/.test(key)
+
 /** shell/messages/<locale>.json */
 function readShell() {
   const dir = join(ROOT, 'shell', 'messages')
@@ -51,7 +63,9 @@ function readShell() {
   for (const loc of ['en', ...LOCALES]) {
     const file = join(dir, `${loc}.json`)
     if (!existsSync(file)) EXIT_BAD(`missing ${file}`)
-    byLocale[loc] = flat(JSON.parse(readFileSync(file, 'utf8')))
+    const all = flat(JSON.parse(readFileSync(file, 'utf8')))
+    // Dropped from English too, so the key totals and the untranslated counts stay comparable.
+    byLocale[loc] = Object.fromEntries(Object.entries(all).filter(([k]) => !isInlangStructure(k)))
   }
   return { name: 'shell (Paraglide)', byLocale }
 }
