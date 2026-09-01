@@ -90,7 +90,10 @@ code type-checks.
    check the gateway asks for. Still to come: the editor, version history and publishing.
 4. **Anyone can install it.** The images are public, the one-command install works on a clean
    machine, and the documentation site is live.
-5. **It works in four languages.** Arabic and German are at 155 of about 800 strings. Right-to-left
+5. **It works in four languages.** German, Persian, Arabic and Turkish ship alongside English, and
+   coverage is measured, not guessed: `app/scripts/i18n-coverage.mjs` counts 4,016 user-facing
+   strings across the shell and the modules, of which German is missing 296 translations, Turkish
+   180, Arabic 175 and Persian 165 (as of 2026-09-01). Right-to-left
    verified on every screen, not only the ones we remembered.
 6. **It is safe to run.** A security review, the outstanding findings from the interface and service
    audits, and a permission matrix that is tested rather than assumed.
