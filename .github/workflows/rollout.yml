@@ -389,6 +389,25 @@ jobs:
           echo "::error::rollback to $PREV did not land within 10 minutes either — this needs a person, now"
           exit 1
 
+      # Whatever happened above, the API must not stay closed. The flag expires on its own after
+      # thirty minutes, but a rollout that failed at "wait for the version" used to leave every
+      # request answering 503 for the rest of that half hour — the one run that failed did exactly
+      # that on 2026-09-02. Open it with whichever image is actually running; both know the flag.
+      - name: Open the API if this run closed it
+        if: always() && steps.migrate.outcome == 'success'
+        env:
+          PREV: ${{ steps.before.outputs.version }}
+        run: |
+          [ -x "$RUNNER_TEMP/remote" ] || exit 0
+          LIVE=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
+          for v in "$LIVE" "$VERSION" "$PREV"; do
+            [ -n "$v" ] || continue
+            if echo "run_core '$v' --maintenance off" | "$RUNNER_TEMP/remote"; then
+              echo "maintenance mode is off (via core:$v)"; exit 0
+            fi
+          done
+          echo "::warning::could not turn maintenance mode off; it expires on its own within 30 minutes"
+
       - name: Leave nothing behind on the host
         if: always()
         run: |

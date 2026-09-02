@@ -406,6 +406,16 @@ pnpm dev       # every service with hot reload
   large upload dies as a 413 the browser reports as a network error. So MinIO gets `files.` on a
   DNS-only record and shell keeps the CDN. `scripts/check-selfhost-drift.py` checks all three:
   a copy may differ in a variable's *value*, never in the set of keys or the Caddy routes.
+- **Coolify deploys `cloud/docker-compose.yml` from `main`, so a compose change reaches the cloud at
+  the next rollout, having run nowhere first.** `selfhost.yml` used to parse the file and stop.
+  On 2026-09-02 an ownership-handover `db-init` landed on `main` in the afternoon and met the cloud
+  at 18:04 in the nightly rollout: it ran `ALTER SEQUENCE … OWNER` on a serial's sequence apart from
+  its table (Postgres refuses; the fix is a `deptype = 'a'` exclusion, because `ALTER TABLE` carries
+  the sequence), exited 3, every container stayed `Created`, and the automatic rollback to 0.1.4
+  failed the same way — nineteen minutes of 503 until the ownership was fixed on the database by
+  hand and the containers started. `selfhost.yml` now runs `db-init` twice against a database that
+  already has superuser-owned objects. Anything in `db-init` runs on every instance at every deploy;
+  test it on a database that already exists, not on an empty one.
 - **`selfhost/coolify/` mounts nothing.** A Compose file pasted into Coolify has no files beside it,
   so the Caddy config is a heredoc inside the container's command and the Postgres init script is
   gone (core's first migration creates the extensions anyway). Keep the heredoc free of `$` —

@@ -24,6 +24,42 @@ jobs:
           docker compose --env-file .env.example --profile calls --profile preview --profile autoupdate config >/dev/null
           echo "✔ every profile"
 
+      # `db-init` is the one piece of SQL that runs on every existing instance at every deploy, and
+      # parsing the compose file says nothing about it. On 2026-09-02 its ownership handover reached
+      # the cloud with a nightly rollout, tried to `ALTER SEQUENCE … OWNER` on a serial's sequence
+      # separately from its table, exited 3, and every container stayed `Created` — including the
+      # rollback's. So it runs here against a database that already has objects owned by the
+      # superuser, the state every instance installed before the handover is in, and it runs twice,
+      # because it runs on every deploy for ever.
+      - name: db-init succeeds against a database that already has objects, twice
+        working-directory: selfhost
+        run: |
+          set -euo pipefail
+          sed -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-postgres/' \
+              -e 's/^KERN_DB_APP_PASSWORD=.*/KERN_DB_APP_PASSWORD=ci-app/' .env.example > .env.ci
+          compose() { docker compose --env-file .env.ci -p kern-selfhost-ci "$@"; }
+          trap 'compose down -v >/dev/null 2>&1 || true; rm -f .env.ci' EXIT
+          compose up -d postgres
+          for i in $(seq 1 40); do
+            [ "$(compose ps --format '{{.Health}}' postgres)" = "healthy" ] && break
+            [ "$i" = "40" ] && { echo "postgres never became healthy"; compose logs postgres; exit 1; }
+            sleep 2
+          done
+          # What an instance from before the handover looks like: a module schema, its migration
+          # bookkeeping with a serial primary key, and a plain table — all owned by the superuser.
+          compose exec -T postgres psql -U kern -d kern -v ON_ERROR_STOP=1 -c "
+            create schema mod_ci;
+            create table mod_ci.__migrations (id serial primary key, hash text);
+            create table mod_ci.things (id uuid primary key, name text);
+            create sequence mod_ci.standalone_seq;"
+          compose run --rm db-init
+          compose run --rm db-init
+          OWNERS=$(compose exec -T postgres psql -U kern -d kern -tAc "
+            select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'mod_ci' and c.relkind in ('r','S') and pg_get_userbyid(c.relowner) <> 'kern_app'")
+          [ "$OWNERS" = "0" ] || { echo "$OWNERS objects in mod_ci are still not owned by kern_app"; exit 1; }
+          echo "✔ db-init handed every object to kern_app, and survives a second run"
+
       - name: The updater is not pinned to KERN_VERSION
         working-directory: selfhost
         # An upgrade must not recreate the container that is running the upgrade. Compose only
