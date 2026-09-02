@@ -255,9 +255,11 @@ jobs:
           fi
 
           IFS=. read -r MA MI PA <<< "$PREV"
-          # Before 1.0.0 a breaking change is a minor, not a major. Without this the first `feat!:`
-          # would quietly declare Kern 1.0.0 — a statement about stability nobody meant to make.
-          if [ "$BUMP" = "major" ] && [ "$MA" = "0" ]; then
+          # Before 1.0.0 an *inferred* breaking change is a minor, not a major. Without this the
+          # first `feat!:` would quietly declare Kern 1.0.0 — a statement about stability nobody
+          # meant to make. A person dispatching with bump=major means exactly that, and is the only
+          # way 1.0.0 gets cut.
+          if [ "$BUMP" = "major" ] && [ "$MA" = "0" ] && [ "$BUMP_INPUT" = "auto" ]; then
             echo "0.x: treating the breaking change as a minor rather than declaring 1.0.0."
             BUMP=minor
           fi

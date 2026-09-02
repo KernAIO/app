@@ -1,120 +1,157 @@
 # Kern roadmap
 
-> Status: **public, pre-1.0.** The repositories are open and every commit is visible. Target for
-> v1.0 is Q4 2026.
+> Status: **public, pre-1.0.** The repositories are open and every commit is visible.
+> **v1.0 ships on 2026-09-16.** Rewritten on 2026-09-02 against what is actually built, not against
+> the plan; the previous roadmap said "Q4 2026" and listed as missing several things that ship today.
 
-## What v1.0 delivers
+## What v1.0 is
 
-v1.0 is deliberately narrower than the original plan. Kern is one application for a team's work, and
-v1.0 delivers that claim for **issues, conversations and documents**, on a platform that is finished
-rather than a wider set that is half-finished.
+One application for a team's work — **issues, conversations, documents, mail, people and assets** —
+that a company can buy hosted, a self-hoster can install with one command and keep updated without
+us, and a developer can extend with a module of their own. The rule we cut by has not changed: a
+module ships when every capability its server offers is reachable from the interface.
 
-The rule we cut by: a module ships when every capability its server offers is reachable from the
-interface. A module whose API exists and whose screens do not is not in v1.0.
+### Shipped, and in v1.0
 
-### Platform
-Accounts and sessions, sign-in with a password, a link, or an identity provider. Many workspaces per
-instance, with membership, built-in and custom roles, groups, and per-object permission bindings.
-One notification inbox that spans **every workspace you belong to**. Files, search across modules,
-the audit log, workspace settings, and per-workspace module enable/disable. A public REST API with
-an OpenAPI document. Installable as an app, in English, German, Persian and Arabic, left-to-right
-and right-to-left, light and dark.
+Verified on 2026-09-02 by reading the registry, the routes and the release feed — not the plan.
 
-### Tracker
-Projects, work item types and hierarchy, custom fields, and workflows with conditions, validators
-and post-functions. Issues with rich descriptions, relations, comments, watchers and attachments.
-List and board views, the KQL query language and saved views. Cycles, milestones, versions,
-components and labels. Triage and intake, including issues raised by email. Time tracking with
-worklogs. Reports: burndown, velocity and created-versus-resolved.
+- **Platform** — accounts with password, magic link, Google/GitHub/Microsoft sign-in, two-factor,
+  passkeys, SSO (OIDC/SAML, entitlement-gated), API keys. Many workspaces per instance; members,
+  built-in and custom roles, groups, per-object permission bindings. One notification inbox across
+  workspaces. Files, cross-module search, the audit log, per-workspace module and capability
+  switches, data export and account erasure. Instance admin console: users, workspaces, modules,
+  plans, subscriptions, updates. MCP server for AI clients. REST API with OpenAPI. Four languages
+  (en, de, fa, ar, plus tr) with zero untranslated strings, RTL, light and dark, installable as an
+  app.
+- **Tracker** — projects, work item types and hierarchy, custom fields and layouts, workflows with
+  a visual editor, issues with relations, comments, watchers, attachments, approvals, list and board
+  views, KQL and saved views, cycles, milestones, versions, components, labels, triage, the public
+  intake form, repeating issues, import, time tracking and reports.
+- **Chat** — channels, private channels, group and direct messages, threads, reactions, mentions,
+  pins, read state, presence, search, attachments, object channels tied to an issue.
+- **Quire** — spaces, a nested page tree, real-time collaborative editing, version history,
+  comments, draft/publish, published sites addressed by path, diagrams and embeds, databases.
+- **Mail** — outbound email per workspace through SMTP, Mailgun, SES, Postmark or Resend, with
+  templates, delivery log, bounces and suppression; intake addresses that turn a reply into an issue.
+- **HR** — directory, org chart, offices, leave, attendance, approvals, subject access and erasure.
+  Onboarding checklists are the one part not built.
+- **Inventory** — the asset register: what the company owns, who holds it, purchase and warranty,
+  categories, full history.
+- **Billing** — plans, subscriptions, entitlements and Stripe checkout, administered from the admin
+  console. Off by default on a self-hosted instance.
+- **Release and update** — a nightly release that advances every module, signs a feed, rolls the
+  cloud out as the canary with a migration dry run, snapshot, maintenance mode and rollback; a
+  self-hosted instance that notifies or updates itself inside a window it chooses. Automatic end to
+  end since 2026-09-02.
 
-### Chat
-Channels, private channels, group and direct messages. Threads, reactions, mentions that notify,
-pinned messages, read state and unread counts, presence and typing. Search. Voice and video
-messages, and file attachments. **Object channels** — a conversation attached to an issue, and a
-message that becomes one.
+### Not in v1.0
 
-### Quire
-Documents several people edit at the same time, in nested spaces, with version history and comments.
-Published on the collaboration service that already exists. A *page* has a published version and a
-draft, so a documentation site never shows half-written text; a *live doc* is always live. Spaces,
-the page tree, the editor, version history and draft/publish are built; published sites are
-addressed by path. See [ADR 0006](docs/adr/0006-collaborative-documents.md).
+Never started, or a schema with no screens. Each is documented on the docs site as *planned* and
+on the website as *planned*; nothing sells them.
 
-### Mail
-Outbound email per workspace through SMTP, Mailgun, SES, Postmark or Resend, with templates, a
-delivery log, bounce handling and suppression. Intake addresses that turn a reply into an issue.
+**Drive** · **Calendar** · **Recruiting** · **CRM** · **Automation** rules engine · **Calls**
+(the LiveKit profile exists in Compose; no module uses it) · **AI assistant** · **Personal mail
+inbox** (IMAP) · **Outgoing webhooks** · **HR onboarding** · cross-workspace shared channels ·
+Meilisearch · SCIM · GitHub/GitLab links · CalDAV/Google sync · WebDAV · whiteboards · mobile and
+desktop shells · a marketplace for community modules.
 
-### Self-host
-One command installs it. A single domain behind Caddy with automatic HTTPS. Documented upgrade and
-backup. Public container images.
+## What "finished" means on 2026-09-16
 
-## Deferred to v1.1
+Three people have to succeed without talking to us, and each one is a slice below.
 
-Cut from v1.0 on 2026-08-22, in order to finish the above rather than start these:
+1. **A company buys Kern Cloud** and its data is safe: backups exist and have been restored once,
+   somebody is told when the instance breaks, the plan they bought enforces what it promises, and
+   every page they read on the way in says only true things.
+2. **A self-hoster installs Kern** on a clean machine from the one-line command, upgrades it, rolls
+   it back, and restores a backup — following the docs and nothing else.
+3. **A developer builds a module** from the published template, runs it in a Kern of their own, and
+   sees its screens — following the docs and nothing else.
 
-**Drive** · **Calendar** · **HR** (only onboarding remains — directory, org chart, offices, leave,
-attendance and approvals are built, see below) · **Recruiting**
-(vacancies, pipeline, interviews, career page) · **CRM** (contacts, companies, deals) ·
-**Automation** rules engine and visual builder · **Calls** (LiveKit) · **AI assistant** ·
-**Personal mail inbox** (your own IMAP account inside Kern) · **Outgoing webhooks** ·
-**Importers** (Jira, Linear, CSV)
+## The two weeks
 
-The workflow state machine that HR leave and recruiting pipelines would use is already built and in
-use by the tracker, so those modules start from a foundation rather than from nothing.
+Six slices. A slice is done when the sentence at its head is true and somebody outside this project
+could confirm it; not when the code type-checks. Days are 2026-09-03 → 2026-09-16.
 
-## Built beyond the v1.0 scope
+### 1. Nothing is red, and nothing is sitting unpushed — every day (all two weeks)
 
-Three first-party modules are built, published on npm and registered in the shell, but stand
-outside the v1.0 finish line on purpose — they ride the shared platform (kernel, i18n, releases)
-without the v1.0 bar that every server capability be reachable from the interface:
+*The nightly release runs green, and the cloud is on it by morning.*
 
-- **HR** (`@kernhq/module-hr`) — a directory of people, an org chart, offices, leave, attendance
-  and an approvals inbox, all with working screens. Cut from v1.0 on 2026-08-22 and built anyway;
-  onboarding is the part that is still missing.
-- **Billing** (`@kernhq/module-billing`) — plans, subscriptions and entitlements. The cloud
-  instance's plan catalogue is its data; it is administered from the core admin console (plans and
-  subscriptions) and workspace settings rather than a sidebar section.
-- **Inventory** (`@kernhq/module-inventory`) — the company's asset register in one view: what it
-  owns, who holds each item, purchase and warranty details, and a full history of every change.
+The release is automatic now, so a red `main` is the only thing that can stop it — and on
+2026-09-02 every service's `main` was red without anyone knowing. Each morning: the nightly's
+outcome, `/api/health` on app.kernaio.com against the feed, and `pnpm status` for work another
+session left half-way (on 2026-09-02: 19 uncommitted files in `shell`, 7 unpushed commits in
+`website`, a cross-tenant fix in `module-tracker` that sat unpushed for a day). Land it or revert
+it; a repository is not allowed to carry work nobody has tested for more than a day.
 
-## v1.x and beyond
+### 2. Kern Cloud can take money safely — days 1–5
 
-Cross-workspace shared channels · Meilisearch provider · SCIM · GitHub/GitLab links · CalDAV and
-Google Calendar sync · WebDAV · virtual office and call recording · whiteboards · mobile apps
-(Capacitor) and desktop (Tauri) · a marketplace for community modules.
+*A stranger signs up, upgrades to Team with a card, hits the seat limit, is invoiced, cancels, and
+nothing about that surprised them or us.*
 
-## How v1.0 gets finished
+- Nightly `pg_dump` and an object-storage mirror to Hetzner S3, off the host, with retention; one
+  restore drill onto a scratch database, documented. Today the only copies are the pre-upgrade
+  dumps in `/var/backups/kern`, on the same disk.
+- An external probe on `/api/health` and a failure notification on `release.yml` and
+  `rollout.yml`. Tonight's nineteen-minute outage was noticed because somebody was watching.
+- Stripe live: a real test purchase through checkout, the webhook route, the invoice, the
+  suspension path (`billing-suspended.spec.ts` exists uncommitted in `shell`), and every
+  entitlement the plan table advertises actually enforced — seats, storage, SSO, audit retention.
+- Legal: `/privacy`, `/terms`, `/subprocessors` read by a careful hour; the DPA decision made; the
+  five mailboxes receive mail.
+- Password SSH login off on the cloud host; key auth is what the rollout uses.
 
-Six slices, in this order. Each is finished when somebody can do the thing end to end, not when the
-code type-checks.
+### 3. Every page says only what ships — days 1–3
 
-1. **Every tracker capability is reachable.** *Nearly there.* The tracker is customisable end to
-   end: a project starts from one of four team templates, an administrator adds a custom field and
-   decides where it appears on each work item type, and the issue renders it. Reachable now:
-   comments with mentions and attachments, relations, sub-issues, links, approvals, triage,
-   grouping by a custom field, `relation` and `formula` fields, saved views, components, versions
-   and labels, time tracking, and reports on burndown, velocity, created-versus-resolved and time.
-   **Still without screens:** imports, issue templates, recurring issues, the workflow editor, and
-   the public intake form — the form's questions are derived from the layout, but the page a
-   stranger fills in does not exist yet.
+*Nowhere on kernaio.com, docs.kernaio.com or GitHub does a module that does not exist appear in
+the present tense.*
 
-2. **A conversation about an issue.** An issue has its own channel; a message becomes an issue and
-   links back. Both modules exist — this is the seam that makes "one application" true rather than
-   two applications sharing a sidebar.
-3. **A document a team writes together.** The collaboration service had no consumer at all; it now
-   has one — `@kernhq/module-quire`, with spaces, a nested page tree and the access check the
-   gateway asks for. The editor, version history and publishing are built too: a page has a draft
-   and a published version, and a published site is addressed by path.
-4. **Anyone can install it.** The images are public, the one-command install works on a clean
-   machine, and the documentation site is live.
-5. **It works in four languages.** German, Persian, Arabic and Turkish ship alongside English, and
-   coverage is measured, not guessed: `app/scripts/i18n-coverage.mjs` counts 3,645 user-facing
-   strings across the shell and the modules — inlang plumbing, placeholder-only templates and
-   input-format examples excluded, since no locale can translate those — and flags 143 German, 43
-   Turkish and 32 each of Arabic and Persian as still identical to English (as of 2026-09-02).
-   Every one of those has been audited and is deliberate: brand and product names, words German
-   writes the same way, and the module template's English-only starter strings. The last genuinely
-   untranslated strings shipped on 2026-09-02, so the translation debt is zero. Right-to-left
-   verified on every screen, not only the ones we remembered.
-6. **It is safe to run.** A security review, the outstanding findings from the interface and service
-   audits, and a permission matrix that is tested rather than assumed.
+The docs site describes Recruiting, CRM, Automation, Calls and AI as if built. The website marks
+HR *planned* and Quire *building* while both ship, and its launch checklist still says the images
+are private (they are public). The README, the docs sidebar, the website's module list and this
+file have to agree, and `pnpm pricing` has to import a clean plan catalogue.
+
+### 4. A self-hoster gets from zero to upgraded and back — days 4–9
+
+*On a clean Ubuntu 24.04 VM, `curl -fsSL https://get.kernaio.com | bash` gives a working Kern; a
+release later, the timer upgrades it inside the window; `kern-rollback.sh` undoes it;
+`kern-backup.sh` and a restore work.*
+
+Done by running it, on a VM nobody has touched, following `docs.kernaio.com/self-hosting` and
+nothing else — and the same on Coolify from the pasted Compose file. Every step that needed
+knowledge not on the page is a docs bug; every step that failed is a product bug. The `db-init`
+class of failure (a script that runs on every existing instance at every deploy) now has a CI test;
+anything else found here gets one too.
+
+### 5. A developer ships a module of their own — days 6–12
+
+*`npx degit KernAIO/module-template` → build → test → run inside a local Kern → the module's
+screens and settings appear, and its permissions, capabilities and strings work — following
+`docs.kernaio.com/developers/module-development` and nothing else.*
+
+Today a third-party module still needs a line in `shell`'s registry and a line in `core`'s
+`featureModules`, which means forking both. v1.0 makes that a **build**, not a fork: `shell` and
+`core` images accept a list of extra module packages at build time and generate those two lines,
+and the docs show a self-hoster building their own image pair with a custom module in it. Runtime
+loading stays out of scope (ADR 0002). Verified by an agent with no context following the page.
+
+### 6. It is safe to sell — days 9–14
+
+*The permission matrix and tenant isolation are tested in every module, not assumed; the
+interface passes its own audit in four renderings; the security review has no open finding.*
+
+`@kernhq/testing`'s permission matrix runs in every module; each module carries an isolation test
+like `module-tracker`'s (two of the leaks it found shipped before it existed); rate limits and
+security headers checked from outside; `ux.spec.ts` green on every route; a last pass over the
+open audit findings. Then **v1.0.0** is cut by hand — the only version the nightly will not pick
+on its own — with `schemaChanges` and `minPreviousVersion` set deliberately.
+
+## After v1.0
+
+The modules above under *Not in v1.0*, in roughly the order a paying team asks for them:
+Recruiting and CRM (both start from the workflow engine the tracker already uses), Automation,
+Calendar, Drive, Calls, AI. Each ships as its own repository through the same nightly.
+
+## How this file is kept true
+
+Change it in the commit that changes what v1.0 contains. A slice is moved to *Shipped* when its
+sentence is true, with the date; a slice that slips says so here rather than in a chat.
