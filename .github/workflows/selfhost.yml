@@ -78,7 +78,11 @@ jobs:
 
       - name: The Coolify and cloud compose files parse and resolve
         # Their variables come from Coolify, not from a .env, so `config` warns about every one of
-        # them being unset. That is the expected state here; only a parse failure matters.
+        # them being unset. That is the expected state here; only a parse failure matters. The one
+        # variable the files *require* (`${KERN_ADMIN_EMAIL:?…}` — an instance with no first
+        # administrator is unrecoverable) is given a value, or `config` refuses on purpose.
+        env:
+          KERN_ADMIN_EMAIL: ci@example.com
         run: |
           set -euo pipefail
           for f in selfhost/coolify/docker-compose.yml cloud/docker-compose.yml; do
