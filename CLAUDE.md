@@ -279,16 +279,17 @@ Mailpit for `mail`. Things learned the hard way:
   `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
   cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
   `pnpm install --lockfile-only` there, then copy the lockfile back.
-- **Nine repositories commit a lockfile: `kernel` and all eight `module-*`. The services do not** —
-  `core`, `chat`, `mail`, `collab`, `shell` and `docs` have none. Their CI is
-  `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo without one
-  resolves fresh from its ranges every run and a repo with one fails at *install* the moment its
-  lockfile drifts — before a single test. Check which kind you are in before adding a dependency or
-  editing a range; assuming from one repo's behaviour is how a publish job dies at
-  ERR_PNPM_OUTDATED_LOCKFILE having built nothing. `pnpm lint` says so now, but the refresh still
-  cannot be done from inside the umbrella: copy `package.json`, `pnpm-lock.yaml` and `.npmrc` to a
-  directory outside the workspace, run `pnpm install --lockfile-only` there, and copy the lockfile
-  back.
+- **Every repository that builds something commits a lockfile: `kernel`, all eight `module-*`, and
+  since 2026-09-02 the five services too.** `docs` is the one without. CI is
+  `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo with one
+  fails at *install* the moment its lockfile drifts — before a single test. The services got theirs
+  from the nightly release's reach (see below), and for a reason worth knowing: without one,
+  Docker's dependency layer is keyed on `package.json` alone, so five releases in a row shipped
+  modules resolved on 2026-08-27 while npm was six versions ahead — the image reported 0.1.4 and
+  ran code a week old. Editing a range now means `scripts/relock.sh <repo>` in the same commit;
+  `pnpm lint` (`check-ranges.mjs`) refuses a manifest its lockfile disagrees with. The refresh still
+  cannot be done from inside the umbrella — `relock.sh` clones the repo elsewhere, resolves there,
+  and copies the lockfile back.
 - Skipping a test because its infrastructure is missing is fine on a laptop and dishonest in CI.
   Fail when `process.env.CI` is set.
 - **A workflow that creates a release with `GITHUB_TOKEN` does not fire this repository's own
@@ -442,16 +443,33 @@ pnpm dev       # every service with hot reload
   while plain `tsc` resolves the linked one — so shell reports errors for procedures that exist,
   in files nobody touched. Plain `tsc` passing is not evidence here; `pnpm typecheck` is.
 - **A release is one act across six repositories, and `release.yml` here is the only thing that
-  performs it.** Nightly (or by hand) it tags one version in `core`, `shell`, `chat`, `mail` and
-  `collab`, waits for each image to appear in GHCR — `release-feed.mjs` reads the images to find out
-  what modules a release contains, so the feed cannot be built before they exist — then publishes the
-  umbrella release. That fires `release-feed.yml`, which signs the feed and dispatches `rollout.yml`,
-  which pins `KERN_VERSION` in Coolify and waits for `/api/health` to report it. Nothing in the chain
-  needs a hand after `git push`, which is the point: main moves all day and the cloud moves once.
-  Tagging another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot, and the
+  performs it.** Nightly (or by hand) it first *reaches*: `scripts/reach.mjs` advances every
+  service to the newest compatible `@kernhq/*` set — one version per module across `core` and
+  `shell`, because a module's server and client must agree — commits it with a lockfile on
+  `release/reach`, waits for each repository's CI, and lands all five on `main` or none. Then it
+  tags one version in `core`, `shell`, `chat`, `mail` and `collab`, waits for each image to appear
+  in GHCR — `release-feed.mjs` reads the images to find out what modules a release contains, so the
+  feed cannot be built before they exist — writes notes that include each module's changelog, and
+  creates the umbrella release **as a draft**. It dispatches `release-feed.yml`, which extends the
+  *previous* release's feed (never `releases/latest`, which is the draft-less new release and 404s
+  — that is how the feed forgot every earlier release for five releases), signs it, publishes the
+  draft, and dispatches `rollout.yml`. The cloud is the canary: it takes the release that night with
+  a migration dry run, snapshot, maintenance mode and rollback; self-hosters on `auto` follow after
+  their settling period. Nothing in the chain needs a hand after `git push`, which is the point:
+  main moves all day and the cloud moves once. A reach that fails CI does not stop the release — it
+  goes out from `main` as it is and the run ends red naming the module to republish. Tagging
+  another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot, and the
   fine-grained PAT cannot see the umbrella — a step that touches both needs one token for each.
+- **Renovate is installed and has never opened a pull request here.** ADR 0009 leaned on its
+  `@kernhq/*` automerge for months; zero PRs and zero dependency dashboards in any repository. Do
+  not lean on it for anything a release depends on; the reach is what moves module pins.
+- **Reading a workflow run's `conclusion` right after a push sees `null`.** The old red-main check
+  read the latest run's conclusion once and called a commit that was still testing "missing".
+  `.github/scripts/wait-green.sh` waits for a completed run and accepts a green twin over a
+  cancelled one; use it anywhere a workflow gates on another repository's CI.
 - **Nothing picks a version number by hand any more, and nothing needs a changeset written by hand
-  except a breaking change.** `release.yml` reads the bump out of the commit subjects, so
+  except a breaking change.** `release.yml` reads the bump out of the commit subjects and out of
+  how far each module moved (a module that crossed a minor makes the release a minor), so
   Conventional Commits stopped being a style rule and became the input to the release; below 1.0.0 a
   breaking change is demoted to a minor rather than declaring a stability nobody meant. `publish.yml`
   infers a missing changeset the same way. The one thing neither will guess is a **major**: whether

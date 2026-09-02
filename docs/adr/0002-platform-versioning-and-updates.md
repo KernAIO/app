@@ -97,6 +97,30 @@ that time, which had no rollback at all. Weighted-traffic canary would need infr
 (a second application instance and a load balancer that can split by weight) this stack does not have
 yet.
 
+## Addendum (2026-09-02): the cloud is the canary, and the rollout migrates first
+
+Decision 7 was reopened on 2026-09-01 with a proposal that a person dispatch every cloud rollout,
+because the one rollout on record had produced a 502 and did none of what `kern-upgrade.sh` does.
+That is the wrong fix: it trades an automatic risk for a manual one, and the point of one version
+for the platform is that nobody hand-carries it. The decision stands, with two changes:
+
+1. **The cloud takes every release the night it is cut, and self-hosted instances follow.** An
+   instance on `auto` waits its settling period (three days by default) before taking a release;
+   app.kernaio.com waits none. If a release breaks, it breaks on the instance we watch, before it
+   reaches anyone who trusts the setting. Stopping the cloud from being first would mean that the
+   first instance to find a bad release is a customer's.
+2. **`rollout.yml` does what `kern-upgrade.sh` does, in the same order.** Dry-run the new image's
+   migrations against the live database; snapshot; turn maintenance mode on; migrate once with the
+   new image; deploy; wait for every service to report the version and pass its readiness check;
+   turn maintenance mode off; watch it for five minutes; re-pin what was live before if any of that
+   failed. Coolify still recreates the containers, so there is still a gap where nothing serves —
+   but nothing serves *half a schema*, and a release whose migrations cannot run never starts
+   deploying.
+
+A release is only visible once its feed is attached: `release.yml` creates it as a draft and
+`release-feed.yml` publishes it after `releases.json` is uploaded, so `releases/latest` never points
+at a version an instance cannot read.
+
 ## Consequences
 
 - `installed_version` becomes meaningful only once something writes it from the migration path; it

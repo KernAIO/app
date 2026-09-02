@@ -5,15 +5,39 @@ name: Cloud rollout
 # feed announces — so "what is cloud running" has the same answer as "what was released". This
 # workflow is the only thing that changes that pin.
 #
-# `release-feed.yml` calls it once a release's feed is signed, which is what keeps the two in step.
-# It is also `workflow_dispatch` on purpose: rolling forward to a version out of band, or rolling
-# back to an earlier one, is the same operation and should not need a release to hang off.
+# **The cloud is the canary, and nobody clicks.** `release-feed.yml` dispatches this the moment a
+# release's feed is signed, so our own instance takes every release the night it is cut, and a
+# self-hosted instance on `auto` takes it days later, after its settling period. For that to be
+# safe unattended, this does on the cloud what `kern-upgrade.sh` does on a self-hosted host, in
+# the same order:
+#
+#   preflight   — the new image's migrations are dry-run against the live database, before
+#                 anything is touched; a release that cannot migrate never starts deploying
+#   snapshot    — pg_dump on the host, kept there
+#   maintenance — the API answers 503 while the schema moves, instead of serving half a schema
+#   migrate     — once, with the new image, before any new container serves traffic
+#   deploy      — Coolify recreates the containers on the pinned version
+#   verify      — every service reports the version and stays healthy for five minutes
+#   roll back   — re-pin what was live before if any of that failed, and say so loudly
+#
+# Rolling forward out of band and rolling back to an earlier version are the same operation, which
+# is why this takes a version rather than reading one.
 on:
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to roll out, without a leading v (e.g. 0.2.0)'
         required: true
+      preflight_only:
+        description: 'Run the checks and the migration dry run against the live database, then stop without changing anything'
+        required: false
+        default: false
+        type: boolean
+      no_rollback_target:
+        description: 'Proceed even though what is live now is not a version this can roll back to. Only ever true for the first rollout onto a pinned version.'
+        required: false
+        default: false
+        type: boolean
 
 permissions: { contents: read }
 concurrency:
@@ -25,54 +49,243 @@ jobs:
     # Without the variable there is no cloud to roll out to, which is the normal state of a fork.
     if: vars.KERN_CLOUD_DISPATCH == 'true'
     runs-on: ubuntu-latest
+    env:
+      # A dispatch input is never interpolated straight into a shell script: `${{ }}` is substituted
+      # before bash parses the line, so the input would be code rather than data.
+      VERSION: ${{ inputs.version }}
+      PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
+      SSH_HOST: ${{ vars.KERN_CLOUD_SSH_HOST }}
+      SSH_USER: ${{ vars.KERN_CLOUD_SSH_USER || 'root' }}
+      SNAPSHOT_DIR: ${{ vars.KERN_CLOUD_SNAPSHOT_DIR || '/var/backups/kern' }}
+      PG_CONTAINER: ${{ vars.KERN_CLOUD_PG_CONTAINER }}
     steps:
+      - name: Refuse anything that is not a pinned version
+        run: |
+          set -euo pipefail
+          case "$VERSION" in
+            main|latest)
+              echo "::error::'$VERSION' is a moving tag, not a version. It points at whatever was built last, so an instance pinned to it cannot say what it is running and cannot be rolled back to. Pick a release from https://github.com/${{ github.repository }}/releases."
+              exit 1 ;;
+            v*)
+              echo "::error::Give the version without its leading v — '$VERSION' should be '${VERSION#v}'."
+              exit 1 ;;
+          esac
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$VERSION' is not a version number. KERN_VERSION is baked into an image at build time, so only something a release tagged can be rolled out."
+            exit 1
+          fi
+          echo "rolling out $VERSION"
+
+      - name: Connect to the cloud host
+        env:
+          SSH_KEY: ${{ secrets.KERN_CLOUD_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ vars.KERN_CLOUD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_KEY:-}" ]; then
+            echo "::error::This rollout needs the host: it dry-runs the migrations, takes a database snapshot and closes the API before deploying. Set the repository variable KERN_CLOUD_SSH_HOST and the secret KERN_CLOUD_SSH_KEY (optionally KERN_CLOUD_SSH_USER, KERN_CLOUD_SSH_KNOWN_HOSTS, KERN_CLOUD_SNAPSHOT_DIR and KERN_CLOUD_PG_CONTAINER). Deploying paying customers without those is what this step exists to prevent."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/rollout_key
+          chmod 600 ~/.ssh/rollout_key
+          if [ -n "${SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::KERN_CLOUD_SSH_KNOWN_HOSTS is not set, so this run trusts whatever key the host presents. Set it to the output of 'ssh-keyscan <host>'."
+            ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+          # The helpers every remote step uses, installed once. The host runs more than one stack
+          # and Coolify keeps a Postgres of its own, so every container is found by the compose
+          # project Coolify names after the application — never by "the container with core in its
+          # name". `run_core` runs the *new* image's migrate entrypoint against the live database
+          # with the running core's own environment and network: that is how the dry run, the
+          # maintenance flag and the migration all reach the right database with the right
+          # credentials, and none of them ever leave the host.
+          cat > "$RUNNER_TEMP/lib.sh" <<'LIB'
+          find_svc() { # find_svc <compose service>
+            docker ps --filter "label=com.docker.compose.project=$APP_UUID" \
+                      --filter "label=com.docker.compose.service=$1" --format '{{.Names}}' | head -1
+          }
+          run_core() { # run_core <version> <migrate.js args...>
+            local v="$1"; shift
+            local core; core="$(find_svc core)"
+            [ -n "$core" ] || { echo "no running core container in compose project $APP_UUID" >&2; return 1; }
+            local net; net="$(docker inspect "$core" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{println $k}}{{end}}' | head -1)"
+            local envf; envf="$(mktemp)"; chmod 600 "$envf"
+            docker inspect "$core" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -v '^KERN_VERSION=' > "$envf"
+            docker run --rm --network "$net" --env-file "$envf" "ghcr.io/kernaio/core:$v" node dist/migrate.js "$@"
+            local rc=$?
+            rm -f "$envf"
+            return $rc
+          }
+          wait_ready() { # wait_ready <compose service> <port> <attempts, 2s apart>; absent service = ready
+            local c i
+            for i in $(seq 1 "$3"); do
+              c="$(find_svc "$1")"
+              if [ -z "$c" ]; then sleep 2; continue; fi
+              if docker exec "$c" node -e "fetch('http://127.0.0.1:$2/api/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          LIB
+          scp -q -i ~/.ssh/rollout_key -o BatchMode=yes -o ConnectTimeout=15 "$RUNNER_TEMP/lib.sh" "$SSH_USER@$SSH_HOST:/tmp/kern-rollout-lib.sh"
+
+          # One way to run something over there, for every step below.
+          cat > "$RUNNER_TEMP/remote" <<'EOS'
+          #!/usr/bin/env bash
+          # remote <script on stdin>: runs it on the cloud host with the helpers and the variables loaded
+          exec ssh -i ~/.ssh/rollout_key -o BatchMode=yes -o ConnectTimeout=15 "$SSH_USER@$SSH_HOST" \
+            "APP_UUID='$APP_UUID' SNAPSHOT_DIR='$SNAPSHOT_DIR' PG_CONTAINER='$PG_CONTAINER' VERSION='$VERSION' bash -c 'source /tmp/kern-rollout-lib.sh; set -euo pipefail; eval \"\$(cat)\"'"
+          EOS
+          chmod +x "$RUNNER_TEMP/remote"
+          echo 'echo "connected to $(hostname) as $(whoami); docker $(docker version --format "{{.Server.Version}}")"' | "$RUNNER_TEMP/remote"
+
       - name: Record what is live now, in case this needs to roll back
         id: before
         run: |
           set -euo pipefail
           GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
-          echo "version=$GOT" >> "$GITHUB_OUTPUT"
           echo "Currently live: ${GOT:-unreachable}"
 
+          # A rollback target has to be a version an image exists for. `main` and `latest` are not:
+          # re-pinning one after a failed rollout deploys whatever was built last, which is neither
+          # what was live nor anything anyone chose. `kern-upgrade.sh` refuses the same thing on a
+          # self-hosted instance, for the same reason.
+          BAD=""
+          if [ -z "$GOT" ]; then
+            BAD="app.kernaio.com did not answer /api/health, so there is no way to know what a rollback would go back to"
+          elif [ "$GOT" = "main" ] || [ "$GOT" = "latest" ]; then
+            BAD="app.kernaio.com reports '$GOT', a moving tag — rolling back to it would deploy whatever main built last"
+          elif ! printf '%s' "$GOT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            BAD="app.kernaio.com reports '$GOT', which is not a version this workflow could roll back to"
+          fi
+
+          if [ -n "$BAD" ]; then
+            if [ "${{ inputs.no_rollback_target }}" != "true" ]; then
+              echo "::error::$BAD. Fix the pin first, or dispatch again with no_rollback_target — which says out loud that this rollout has no way back."
+              exit 1
+            fi
+            echo "::warning::$BAD. Proceeding because no_rollback_target was set: if this rollout fails, recovering it is a manual job."
+            echo "version=" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$GOT" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$GOT" = "$VERSION" ] && [ "$PREFLIGHT_ONLY" != "true" ]; then
+            echo "app.kernaio.com is already on $VERSION — nothing to roll out."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check the release exists before touching the instance
+        if: steps.before.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          V='${{ inputs.version }}'
           # Rolling out a tag that was never built leaves the stack pulling an image that does not
           # exist, and Coolify reports that as a failed deploy rather than as a bad version.
           for image in shell core chat mail collab; do
             TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:kernaio/$image:pull&service=ghcr.io" | jq -r .token)
             if ! curl -fsSL -H "Authorization: Bearer $TOKEN" \
-                 "https://ghcr.io/v2/kernaio/$image/manifests/$V" \
+                 "https://ghcr.io/v2/kernaio/$image/manifests/$VERSION" \
                  -H 'Accept: application/vnd.oci.image.index.v1+json' >/dev/null 2>&1; then
-              echo "::error::ghcr.io/kernaio/$image:$V does not exist — was the release tagged?"
+              echo "::error::ghcr.io/kernaio/$image:$VERSION does not exist — was the release tagged?"
               exit 1
             fi
-            echo "ok: ghcr.io/kernaio/$image:$V"
+            echo "ok: ghcr.io/kernaio/$image:$VERSION"
           done
 
-      - name: Pin KERN_VERSION
+      # The same question `kern-upgrade.sh` asks in its preflight, against the live database: what
+      # would this release's migrations do, and do they run? A release that cannot migrate never
+      # gets as far as a snapshot, let alone a deploy. It executes the *new* image, so this also
+      # pulls it — a pull that fails costs nothing.
+      - name: Dry-run the migrations against the live database
+        if: steps.before.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/remote" <<'EOS'
+          echo "pulling ghcr.io/kernaio/core:$VERSION"
+          docker pull -q "ghcr.io/kernaio/core:$VERSION" >/dev/null
+          echo "dry run:"
+          run_core "$VERSION" --check
+          EOS
+
+      - name: Preflight only — stop here
+        if: steps.before.outputs.skip != 'true' && env.PREFLIGHT_ONLY == 'true'
+        run: echo "Preflight passed for $VERSION. Nothing was changed."
+
+      # A rollback re-pins an image. It does not undo a migration, and expand/contract (ADR 0002 §5)
+      # is what makes the older image able to read the newer schema — a rule, not a guarantee. The
+      # dump is what turns "we followed the rule" into something recoverable when we did not.
+      # It stays on the cloud host: a production dump does not belong on a GitHub runner.
+      - name: Snapshot the database before anything changes
+        id: snapshot
+        if: steps.before.outputs.skip != 'true' && env.PREFLIGHT_ONLY != 'true'
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          OUT="$SNAPSHOT_DIR/pre-$VERSION-$STAMP.dump"
+          OUT="$OUT" "$RUNNER_TEMP/remote" <<EOS
+          mkdir -p "\$SNAPSHOT_DIR"
+          CID="\$PG_CONTAINER"
+          [ -n "\$CID" ] || CID="\$(find_svc postgres)"
+          if [ -z "\$CID" ]; then
+            echo "Could not find the Kern Postgres container. Running containers:" >&2
+            docker ps --format '  {{.Names}}' >&2
+            echo "Set the repository variable KERN_CLOUD_PG_CONTAINER to the right one." >&2
+            exit 1
+          fi
+          echo "dumping from \$CID"
+          # POSTGRES_USER and POSTGRES_DB are already in the container's environment, so the
+          # credentials never travel and never appear in a log.
+          docker exec "\$CID" sh -c 'pg_dump -U "\$POSTGRES_USER" -Fc "\$POSTGRES_DB"' > "$OUT"
+          [ -s "$OUT" ] || { echo "the dump is empty" >&2; rm -f "$OUT"; exit 1; }
+          ls -lh "$OUT"
+          # keep the last ten, so snapshots cannot fill the disk on their own
+          ls -1t "\$SNAPSHOT_DIR"/pre-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
+          EOS
+          echo "path=$SSH_USER@$SSH_HOST:$OUT" >> "$GITHUB_OUTPUT"
+          echo "Snapshot: $SSH_HOST:$OUT"
+
+      # From here on the instance is being changed. Maintenance mode is a flag in a kernel-owned
+      # schema that every running service reads, so the *old* containers start answering 503 with
+      # Retry-After while the *new* image moves the schema — nobody gets half a schema, and the
+      # interface shows a maintenance screen rather than failed requests. It expires on its own
+      # after 30 minutes, so a run that dies between "on" and "off" costs a window, not an instance.
+      - name: Close the API and migrate with the new image
+        id: migrate
+        if: steps.before.outputs.skip != 'true' && env.PREFLIGHT_ONLY != 'true'
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/remote" <<'EOS'
+          run_core "$VERSION" --maintenance on
+          echo "maintenance mode is on"
+          if ! run_core "$VERSION"; then
+            echo "migration failed; opening the API again on the version that is still running" >&2
+            run_core "$VERSION" --maintenance off || true
+            exit 1
+          fi
+          echo "migrated"
+          EOS
+
+      - name: Pin KERN_VERSION and deploy
+        if: steps.before.outputs.skip != 'true' && env.PREFLIGHT_ONLY != 'true'
         env:
-          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
-          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
           TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
           set -euo pipefail
-          BODY=$(jq -nc --arg v '${{ inputs.version }}' '{key:"KERN_VERSION", value:$v, is_preview:false}')
+          BODY=$(jq -nc --arg v "$VERSION" '{key:"KERN_VERSION", value:$v, is_preview:false}')
           # POST creates it the first time and 4xx's afterwards; PATCH updates an existing one.
           curl -fsS -X POST "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
             -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY" \
           || curl -fsS -X PATCH "$COOLIFY_URL/api/v1/applications/$APP_UUID/envs" \
             -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY"
           echo
-
-      - name: Deploy
-        env:
-          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
-          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
-          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-        run: |
-          set -euo pipefail
           curl -fsS -X POST "$COOLIFY_URL/api/v1/deploy" \
             -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
             -d "$(jq -nc --arg u "$APP_UUID" '{uuid:$u, force:true}')"
@@ -80,20 +293,34 @@ jobs:
 
       - name: Wait for the instance to report the version it was given
         id: wait
+        if: steps.before.outputs.skip != 'true' && env.PREFLIGHT_ONLY != 'true'
         continue-on-error: true # a failure here rolls back below rather than just leaving CI red
         run: |
           set -euo pipefail
-          V='${{ inputs.version }}'
           # /api/health reports KERN_VERSION as baked into the image, so this checks the rollout
-          # actually landed rather than that Coolify accepted the request.
+          # actually landed rather than that Coolify accepted the request. It keeps answering under
+          # maintenance mode, which is how this can tell the two apart.
           for i in $(seq 1 40); do
             GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
-            if [ "$GOT" = "$V" ]; then echo "app.kernaio.com is on $V"; exit 0; fi
-            echo "attempt $i: reported '${GOT:-unreachable}', want '$V'"
+            if [ "$GOT" = "$VERSION" ]; then echo "app.kernaio.com is on $VERSION"; break; fi
+            echo "attempt $i: reported '${GOT:-unreachable}', want '$VERSION'"
+            if [ "$i" = "40" ]; then
+              echo "::error::app.kernaio.com did not report $VERSION within 10 minutes"
+              exit 1
+            fi
             sleep 15
           done
-          echo "::error::app.kernaio.com did not report $V within 10 minutes"
-          exit 1
+          # chat, mail and collab own module schemas and migrate them inside their own boot — the
+          # migrations the dry run above cannot see — so the API stays closed until they are past
+          # it. Same order as kern-upgrade.sh, for the same reason.
+          "$RUNNER_TEMP/remote" <<'EOS'
+          for pair in "chat 4100" "mail 4200" "collab 4300"; do
+            set -- $pair
+            if wait_ready "$1" "$2" 90; then echo "$1 is ready"; else echo "$1 did not become ready" >&2; exit 1; fi
+          done
+          run_core "$VERSION" --maintenance off
+          echo "maintenance mode is off"
+          EOS
 
       # There is no traffic-split canary here — one Coolify application, one instance, so a new
       # version goes live for everyone the moment it reports its version. What this buys instead:
@@ -106,34 +333,32 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          V='${{ inputs.version }}'
           for i in $(seq 1 20); do
             CODE=$(curl -fsS --max-time 10 -o /tmp/health.json -w '%{http_code}' https://app.kernaio.com/api/health || echo 000)
             GOT=$(jq -r '.version // empty' /tmp/health.json 2>/dev/null || true)
-            if [ "$CODE" != "200" ] || [ "$GOT" != "$V" ]; then
-              echo "::error::regression during verification: http=$CODE version=${GOT:-none}, want 200/$V"
+            if [ "$CODE" != "200" ] || [ "$GOT" != "$VERSION" ]; then
+              echo "::error::regression during verification: http=$CODE version=${GOT:-none}, want 200/$VERSION"
               exit 1
             fi
-            echo "check $i/20: healthy on $V"
+            echo "check $i/20: healthy on $VERSION"
             sleep 15
           done
 
       - name: Roll back to what was live before, if the rollout or the verification failed
         if: steps.wait.outcome == 'failure' || steps.verify.outcome == 'failure'
         env:
-          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
-          APP_UUID: ${{ vars.KERN_CLOUD_APP_UUID }}
           TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          SNAPSHOT: ${{ steps.snapshot.outputs.path }}
+          PREV: ${{ steps.before.outputs.version }}
         run: |
           set -euo pipefail
-          V='${{ inputs.version }}'
-          PREV='${{ steps.before.outputs.version }}'
+          echo "The database snapshot taken before this rollout is at ${SNAPSHOT:-none}"
           if [ -z "$PREV" ]; then
-            echo "::error::rollout failed and there was no reachable previous version to roll back to — this needs a person, now"
+            echo "::error::rollout failed and there was no version to roll back to — this needs a person, now"
             exit 1
           fi
-          if [ "$PREV" = "$V" ]; then
-            echo "::error::rollout of $V failed, but $V was also what was live before it — rolling back to it would do nothing. This needs a person, now"
+          if [ "$PREV" = "$VERSION" ]; then
+            echo "::error::rollout of $VERSION failed, but $VERSION was also what was live before it — rolling back to it would do nothing. This needs a person, now"
             exit 1
           fi
           echo "::warning::rolling app.kernaio.com back to $PREV"
@@ -152,7 +377,10 @@ jobs:
           for i in $(seq 1 40); do
             GOT=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // empty' || true)
             if [ "$GOT" = "$PREV" ]; then
-              echo "::error::rolled back to $PREV after $V failed to stay healthy"
+              # The old image runs against the migrated schema — expand/contract is what makes
+              # that work. Open the API with the image that is actually running.
+              echo "run_core '$PREV' --maintenance off" | "$RUNNER_TEMP/remote" || true
+              echo "::error::rolled back to $PREV after $VERSION failed to stay healthy. The schema is at $VERSION; if the release notes say the schema change was breaking, restore ${SNAPSHOT:-the snapshot}."
               exit 1 # still fail the run — a rollback happened, and that is news, not success
             fi
             echo "rollback attempt $i: reported '${GOT:-unreachable}', want '$PREV'"
@@ -160,3 +388,10 @@ jobs:
           done
           echo "::error::rollback to $PREV did not land within 10 minutes either — this needs a person, now"
           exit 1
+
+      - name: Leave nothing behind on the host
+        if: always()
+        run: |
+          [ -x "$RUNNER_TEMP/remote" ] || exit 0
+          echo 'rm -f /tmp/kern-rollout-lib.sh' | "$RUNNER_TEMP/remote" || true
+          rm -f ~/.ssh/rollout_key

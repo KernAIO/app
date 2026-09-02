@@ -59,11 +59,28 @@ often catch up on their own once the publish lands; check before hand-editing ve
 
 ## Writing the changeset
 
-Write it in the same commit as the change, in the publishing repo:
+Write it in the same commit as the change, in the publishing repo. Every module is now its own
+repository (`KernAIO/module-<id>`), so the file goes in that repo's `.changeset/`:
 
 ```bash
-cd repos/modules && pnpm changeset      # pick packages, pick bump, one honest sentence
+$EDITOR repos/module-<id>/.changeset/<name>.md
 ```
+
+```markdown
+---
+'@kernhq/module-<id>': minor
+---
+
+One honest sentence about the effect, not the diff.
+```
+
+**`pnpm changeset` does not work inside a module repo on this machine.** Changesets resolves the
+*pnpm workspace root* from the cwd, and a module under `app/repos/` has no `pnpm-workspace.yaml` of
+its own — so the CLI walks up to the umbrella and reports "There is no .changeset folder" even
+though there is one. (It works in CI: there the checkout root *is* the workspace.) Write the file by
+hand; the format above is all the interactive prompt would have produced. Do not "fix" it by adding
+a workspace file to a module repo — that changes how standalone installs resolve against the
+umbrella, for every session after yours.
 
 **Writing one is now optional, with one exception.** `publish.yml` infers a changeset from the
 commit when none was written — `feat:` a minor, everything else a patch, naming the packages whose
@@ -74,9 +91,6 @@ The exception is a **breaking change**. Whether an exported type changed shape i
 commit subject, and publishing one as a patch is what a consumer's caret range then installs
 silently. A `!` subject or a `BREAKING CHANGE` trailer with no changeset fails CI *and* the publish,
 deliberately.
-
-```bash
-```
 
 The summary appears in the changelog people read. "fix bug" helps nobody; "reject an issue transition
 whose validator fails, instead of writing it and emitting the event" does.
@@ -154,24 +168,44 @@ see. If it is not, do not cut it — publish the packages and leave the tag.
 
 ### The tag, and the images
 
-**You do not tag by hand any more.** `release.yml` in the umbrella does it — nightly at 02:00 UTC,
-or on demand:
+**You do not tag by hand any more, and you do not bump a service's module ranges by hand either.**
+`release.yml` in the umbrella does both — nightly at 02:00 UTC, or on demand:
 
 ```bash
 gh workflow run release.yml --repo KernAIO/app                    # bump read from the commits
 gh workflow run release.yml --repo KernAIO/app --field bump=minor # override it
+gh workflow run release.yml --repo KernAIO/app --field reach=false # release main exactly as it is
 ```
 
-It refuses to release a `main` whose CI is red, works the version out of the commit subjects
-(`feat:` is a minor, `!` or a `BREAKING CHANGE` trailer is a major, everything else a patch, and
-below 1.0.0 a major is demoted to a minor rather than declaring stability nobody meant), tags that
-one version across `core`, `app`, `chat`, `mail` and `collab`, waits for every image, and publishes
-the umbrella release. Everything after that is automatic: `release-feed.yml` signs the feed and
-dispatches `rollout.yml`, which pins `KERN_VERSION` in Coolify and waits for `/api/health` to report
-it back.
+In order, it:
+
+1. **Reaches.** `scripts/reach.mjs` takes the framework at its newest stable version and every
+   module at the newest version whose peers accept it — one version per module across all five
+   services — and commits the ranges *with a lockfile* on each repository's `release/reach` branch.
+   It waits for that repository's CI and lands all five on `main`, or none. A module whose peers
+   have not caught up is held, named in the notes, and the run ends red — republish the module.
+2. **Works the version out** of the service commits (`feat:` minor, `!` major, below 1.0.0 a major
+   is a minor) and of how far each module moved.
+3. **Waits for CI to be green on every `main`**, tags that one version across `core`, `shell`,
+   `chat`, `mail` and `collab`, and waits for every image.
+4. **Writes the notes** — each service's commits, and each module's changelog entries between the
+   version the previous release shipped and this one — and creates the umbrella release as a
+   **draft**.
+5. **Hands it to `release-feed.yml`**, which extends the previous release's feed, signs it, attaches
+   it, publishes the draft, and dispatches `rollout.yml`. The cloud takes the release that night —
+   dry-run migrations, snapshot, maintenance mode, migrate, deploy, verify, roll back on failure —
+   and self-hosters on `auto` follow after their settling period.
 
 Tagging one repository by hand produces an image nothing else knows about. If you need a version out
-of band, dispatch the workflow.
+of band, dispatch the workflow. If you need the cloud on a version out of band — forward or back —
+dispatch `rollout.yml` with that version; `preflight_only=true` runs the checks and the migration dry
+run against the live database and changes nothing.
+
+Two things the reach taught, both measured on 2026-09-02: five releases shipped modules from a
+Docker layer cached on 2026-08-27, because no service committed a lockfile and `package.json` had
+not changed; and the feed forgot every earlier release on every run, because it read
+`releases/latest` after the new release already existed. The services commit a lockfile now, and the
+feed is built from the *previous* release's asset.
 
 `docker.yml` passes the tag in as the `KERN_VERSION` build arg, so the tag and the version the
 container reports are the same string. A service that passes `version:` to `createKernel` overrides
@@ -179,9 +213,11 @@ that and makes `/api/health` lie — only tests may do it.
 
 ### The release feed
 
-Publishing the GitHub release on the `kern` umbrella runs `release-feed.yml`, which reads the
-**published images** (`docker run --rm <image> node dist/manifest.js`) and writes a signed
-`releases.json` onto the release. Instances read it; the cloud rollout is triggered by it.
+`release.yml` dispatches `release-feed.yml` with the version and the previous version. It reads the
+**published images** (`docker run --rm <image> node dist/manifest.js`), extends the previous
+release's `releases.json`, signs it, uploads it, and publishes the release. Instances read it; the
+cloud rollout is triggered by it. Re-signing an old release (to mark it `breaking`, say) is the
+same dispatch with `rollout=false`.
 
 Two fields are judgement, not derivation, and both are load-bearing:
 

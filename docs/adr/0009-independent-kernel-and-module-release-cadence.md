@@ -56,6 +56,37 @@ The nightly release (`release.yml`) is unchanged: it still cuts one `KERN_VERSIO
 landed on `main` since the last one. What lands on `main` now keeps pace with each part's own
 readiness instead of a person remembering to bump a pin.
 
+## Addendum (2026-09-02): the nightly release performs the reach, because nothing else did
+
+Decision 4 relied on Renovate. Renovate was installed on the organisation and opened no pull request
+and no dependency dashboard in any repository — not once. So the mechanism this ADR described never
+ran, and the consequence was measured rather than imagined: every image from 0.1.0 to 0.1.4 carried
+`tracker 0.11.8`, `quire 0.10.9` and `hr 0.16.0` while npm held 0.11.14, 0.16.0 and 0.20.3. Two
+things kept them there: a caret on a 0.x range never crosses a minor, and the services commit no
+lockfile, so Docker's dependency layer — keyed on `package.json` — was served from cache since the
+last time a range was edited by hand. Five releases changed no module and said they did.
+
+What replaces decision 4:
+
+1. **`release.yml` advances the services itself** (`scripts/reach.mjs`). Before tagging, it takes
+   the framework at its newest stable version and each module at the newest version whose peer
+   ranges accept that framework — one version per module across every service, because a module's
+   server runs in `core` and its client in `shell`. It commits the ranges **with a lockfile** on a
+   `release/reach` branch, waits for each repository's own CI, and lands all of them on `main` or
+   none. A module that has not caught up with the framework is held at its current version, named
+   in the release notes, and the run ends red: the fix is to republish the module, never to move
+   the host down.
+2. **The services commit `pnpm-lock.yaml`** from the first reach onwards. What an image contains
+   is then a committed fact, and a moved lockfile is a rebuilt layer. Editing a range in a service
+   by hand now means `scripts/relock.sh <service>` in the same commit, which `check-ranges.mjs`
+   already enforces.
+3. **A module's version moves the platform's.** A module that moved a minor between two releases
+   makes the release a minor; the release notes carry each module's changelog entries between the
+   version the previous release shipped and the one this release ships.
+
+Decisions 1–3 are unchanged. Renovate stays installed for the non-`@kernhq` dependencies it may one
+day open a pull request for; nothing in the release depends on it.
+
 ## Consequences
 
 - A module author (first-party or not) who widens what their module needs from the kernel must widen

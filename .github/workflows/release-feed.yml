@@ -1,16 +1,26 @@
 name: Release feed
 # Publishes the signed list of releases that self-hosted instances read to find out a newer Kern
-# exists, and that our own cloud rollout is triggered by. It runs after a stable release is
-# published, and it builds the feed from the images that release produced rather than from anything
-# written by hand — so what an admin is told a release changes is what the artefacts contain.
+# exists, and that our own cloud rollout is triggered by. `release.yml` dispatches it once every
+# image exists, and it builds the feed from those images rather than from anything written by hand
+# — so what an admin is told a release changes is what the artefacts contain.
+#
+# It is what makes a release visible: the release is created as a draft, and this workflow
+# publishes it only after `releases.json` is attached. A release with no feed is one no instance
+# could read, and `releases/latest` used to point at exactly that for the minutes in between.
+#
+# It also keeps the feed's memory. Each run starts from the *previous* release's feed and adds one
+# entry; reading `releases/latest` for that, as this once did, found the release being published
+# — with no feed on it yet — and every run threw the history away. An instance several versions
+# behind needs to see the one it is allowed to step to, not only the newest.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to (re)publish into the feed, without a leading v'
         required: true
+      previous:
+        description: 'The release before it, whose feed this one extends (blank only for the first release ever)'
+        required: false
       schema:
         description: 'How much of the schema this release moves'
         required: true
@@ -20,6 +30,11 @@ on:
       min_previous:
         description: 'Oldest version that may upgrade straight to this one (blank for any)'
         required: false
+      rollout:
+        description: 'Roll the cloud onto this version once the feed is published. Off when re-signing an old release into the feed.'
+        required: false
+        default: true
+        type: boolean
 
 # actions: write is what lets the last step dispatch rollout.yml in this same repository.
 permissions: { contents: write, packages: read, actions: write }
@@ -29,9 +44,10 @@ concurrency:
 
 jobs:
   feed:
-    # A prerelease is not something an instance should be offered.
-    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      PREVIOUS: ${{ inputs.previous }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,55 +55,62 @@ jobs:
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
 
-      - id: version
+      - name: Start from the previous release's feed
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V='${{ inputs.version }}'
-          else
-            V='${{ github.event.release.tag_name }}'
+          if [ -z "$PREVIOUS" ] || [ "$PREVIOUS" = "0.0.0" ]; then
+            echo "No previous release named; this feed starts empty."
+            exit 0
           fi
-          echo "value=${V#v}" >> "$GITHUB_OUTPUT"
-
-      # Keep the releases already in the feed: an instance several versions behind needs to see the
-      # one it is allowed to step to, not only the newest.
-      - name: Fetch the current feed
-        continue-on-error: true
-        run: |
-          curl -fsSL -o previous.json \
-            https://github.com/${{ github.repository }}/releases/latest/download/releases.json
+          if ! curl -fsSL -o previous.json \
+               "https://github.com/${{ github.repository }}/releases/download/v$PREVIOUS/releases.json"; then
+            echo "::error::v$PREVIOUS has no releases.json to extend. Re-run this workflow for v$PREVIOUS first (with its own previous), or leave 'previous' blank to start the feed again — which forgets every earlier release."
+            exit 1
+          fi
+          node -e '
+            const doc = JSON.parse(require("fs").readFileSync("previous.json", "utf8"))
+            const feed = JSON.parse(Buffer.from(doc.payload, "base64").toString("utf8"))
+            console.log("previous feed:", feed.releases.map((r) => r.version).join(", "))
+          '
 
       - name: Build and sign
         env:
           KERN_FEED_PRIVATE_KEY: ${{ secrets.KERN_FEED_PRIVATE_KEY }}
+          SCHEMA: ${{ inputs.schema }}
+          MIN_PREVIOUS: ${{ inputs.min_previous }}
         run: |
           set -euo pipefail
           if [ -z "${KERN_FEED_PRIVATE_KEY:-}" ]; then
             echo "::error::KERN_FEED_PRIVATE_KEY is not set, so the feed cannot be signed. Generate a pair with 'node scripts/release-feed.mjs --keygen'."
             exit 1
           fi
-          node scripts/release-feed.mjs \
-            --version "${{ steps.version.outputs.value }}" \
-            --out releases.json \
-            ${{ github.event_name == 'workflow_dispatch' && format('--schema {0}', inputs.schema) || '' }} \
-            ${{ github.event_name == 'workflow_dispatch' && inputs.min_previous != '' && format('--min-previous {0}', inputs.min_previous) || '' }} \
-            $([ -f previous.json ] && echo "--previous previous.json")
+          ARGS=(--version "$VERSION" --out releases.json --schema "$SCHEMA")
+          [ -z "$MIN_PREVIOUS" ] || ARGS+=(--min-previous "$MIN_PREVIOUS")
+          [ -f previous.json ] && ARGS+=(--previous previous.json)
+          node scripts/release-feed.mjs "${ARGS[@]}"
 
-      - name: Attach it to the release
+      - name: Attach it to the release, then publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="v${{ steps.version.outputs.value }}"
+          TAG="v$VERSION"
           gh release upload "$TAG" releases.json --clobber --repo "${{ github.repository }}"
+          # Publishing a draft is what makes `releases/latest` point here. On a release that is
+          # already published (a re-sign) this changes nothing.
+          gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
+          echo "v$VERSION is published with its feed attached."
 
-      # Our cloud tracks stable: the same feed that tells a self-hosted admin a release exists is
-      # what tells the cloud to roll it out, so the two can never describe different releases.
+      # Our cloud is the canary. It takes a release the night it is cut — snapshot, maintenance
+      # mode, migrate, deploy, verify, roll back on failure — and self-hosted instances on `auto`
+      # take it after their own settling period. The same feed that tells a self-hoster a release
+      # exists is what tells the cloud to roll it out, so the two can never describe different
+      # releases.
       - name: Tell the cloud to roll out
-        if: vars.KERN_CLOUD_DISPATCH == 'true'
+        if: vars.KERN_CLOUD_DISPATCH == 'true' && inputs.rollout != false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh workflow run rollout.yml \
             --repo "${{ github.repository }}" \
-            --field version="${{ steps.version.outputs.value }}"
+            --field version="$VERSION"

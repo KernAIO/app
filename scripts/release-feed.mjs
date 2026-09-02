@@ -24,7 +24,7 @@
  * private half in the organisation secrets and nowhere else.
  */
 import { execFileSync } from 'node:child_process'
-import { generateKeyPairSync, createPrivateKey, sign as signBytes } from 'node:crypto'
+import { createPrivateKey, generateKeyPairSync, sign as signBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
@@ -63,7 +63,10 @@ const schemaChanges = value('schema', 'additive')
 if (!['none', 'additive', 'breaking'].includes(schemaChanges))
   throw new Error(`--schema takes none, additive or breaking, not "${schemaChanges}"`)
 const minPreviousVersion = value('min-previous', null)
-const requiredEnv = (value('required-env', '') || '').split(',').map((s) => s.trim()).filter(Boolean)
+const requiredEnv = (value('required-env', '') || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
 const services = (value('services', 'shell,core,chat,mail,collab') || '').split(',').filter(Boolean)
 
 /**
@@ -81,12 +84,19 @@ function modulesIn(service) {
   try {
     const stdout = execFileSync(
       'docker',
-      ['run', '--rm', '--entrypoint', 'node', image, '-e', 'console.log(JSON.stringify(process.env.KERN_VERSION))'],
+      [
+        'run',
+        '--rm',
+        '--entrypoint',
+        'node',
+        image,
+        '-e',
+        'console.log(JSON.stringify(process.env.KERN_VERSION))',
+      ],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     )
     const baked = JSON.parse(stdout.trim())
-    if (baked !== version)
-      throw new Error(`${image} reports KERN_VERSION=${baked}, not ${version}`)
+    if (baked !== version) throw new Error(`${image} reports KERN_VERSION=${baked}, not ${version}`)
   } catch (err) {
     throw new Error(`Could not read ${image}: ${err.message}`)
   }
@@ -111,10 +121,22 @@ for (const service of services) {
   Object.assign(modules, modulesIn(service))
 }
 
+const previousPath = value('previous', null)
+let releases = []
+if (previousPath && existsSync(previousPath)) {
+  const doc = JSON.parse(readFileSync(previousPath, 'utf8'))
+  const feed = JSON.parse(Buffer.from(doc.payload, 'base64').toString('utf8'))
+  releases = feed.releases
+}
+
+// A re-signed entry keeps the moment it was first published. An instance on `auto` waits
+// `minReleaseAgeHours` from that moment, so stamping "now" on a re-run would restart every
+// self-hoster's settling period for a release that has been out for days.
+const already = releases.find((r) => r.version === version)
 const entry = {
   version,
   channel: 'stable',
-  publishedAt: value('published-at', new Date().toISOString()),
+  publishedAt: value('published-at', already?.publishedAt ?? new Date().toISOString()),
   notesUrl: `https://github.com/KernAIO/app/releases/tag/v${version}`,
   services: serviceTags,
   modules,
@@ -123,15 +145,14 @@ const entry = {
   requiredEnv,
 }
 
-const previousPath = value('previous', null)
-let releases = []
-if (previousPath && existsSync(previousPath)) {
-  const doc = JSON.parse(readFileSync(previousPath, 'utf8'))
-  const feed = JSON.parse(Buffer.from(doc.payload, 'base64').toString('utf8'))
-  releases = feed.releases.filter((r) => r.version !== version)
-}
+releases = releases.filter((r) => r.version !== version)
 releases.push(entry)
-releases.sort((a, b) => (a.version < b.version ? -1 : 1))
+// by version, not by string: "0.10.0" sorts before "0.9.0" as text
+const parts = (v) => v.split('-')[0].split('.').map(Number)
+releases.sort((a, b) => {
+  const [x, y] = [parts(a.version), parts(b.version)]
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]
+})
 
 const feed = { schema: 1, generatedAt: new Date().toISOString(), releases }
 const payload = Buffer.from(JSON.stringify(feed), 'utf8')
@@ -150,6 +171,9 @@ const key = createPrivateKey({ key: Buffer.from(keyBase64, 'base64'), format: 'd
 // than none at all.
 writeFileSync(
   out,
-  JSON.stringify({ payload: payload.toString('base64'), signature: signBytes(null, payload, key).toString('base64') }),
+  JSON.stringify({
+    payload: payload.toString('base64'),
+    signature: signBytes(null, payload, key).toString('base64'),
+  }),
 )
 console.log(`✔ ${out}: ${releases.length} releases, newest ${version}`)

@@ -1,14 +1,32 @@
 name: Release
-# Cuts one platform version out of whatever landed on main since the last one.
+# Cuts one platform version out of whatever landed since the last one — nightly, with nobody
+# watching, and safe to apply unattended.
 #
 # Kern releases as a single platform: every image and every module moves together under one
-# KERN_VERSION, so a release is not a per-repository act. This workflow tags the same version in
-# each service repository, waits for the images that produces, and then publishes the umbrella
-# release — which is what `release-feed.yml` signs a feed from and what rolls the cloud forward.
+# KERN_VERSION, so a release is not a per-repository act. Each night this workflow:
 #
-# It runs nightly because main moves all day. Batching a day's work into one version is what keeps
-# a version number meaningful: an admin on 0.4.0 knows exactly which module versions they have.
-# Releasing per push would produce a number per commit and tell them nothing.
+#   1. advances every service repository to the newest *compatible* @kernhq packages (the reach),
+#      commits that with a lockfile on a `release/reach` branch, waits for the repository's own
+#      CI, and lands it on main only if every service passed — all or nothing, because a module's
+#      server runs in `core` and its client in `shell`, and two versions of one module in one
+#      release is a contract mismatch;
+#   2. works the version out of what moved: Conventional Commit subjects in the service
+#      repositories, plus the semver distance every module and framework package travelled;
+#   3. refuses to tag a main whose CI is not green, tags the same version in every service
+#      repository, waits for every image to exist;
+#   4. writes the release notes — each service's commits, and every module's changelog entries
+#      between the version the previous release carried and the one this release carries — and
+#      publishes them as a *draft*, so nobody can see a version before its feed exists;
+#   5. hands it to `release-feed.yml`, which signs the feed, publishes the release, and tells the
+#      cloud to roll out.
+#
+# The reach exists because five releases in a row (0.1.0–0.1.4) shipped modules published on
+# 2026-08-27 while npm was six versions ahead: a caret on 0.x never crosses a minor, and a cached
+# Docker layer never re-resolves a patch. A release is a claim about what changed; this is what
+# makes the claim true.
+#
+# A reach that fails CI is not a broken night: the release is cut from main as it is, and the run
+# ends red with the branch named, so a person republishes the module that fell behind.
 on:
   schedule:
     # 02:00 UTC — after the day's pushes, before anyone is looking.
@@ -16,15 +34,20 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Override the bump; auto reads it from the commits'
+        description: 'Override the bump; auto reads it from the commits and the module moves'
         required: true
         default: auto
         type: choice
         options: [auto, patch, minor, major]
       force:
-        description: 'Release even if no service repository changed'
+        description: 'Release even if nothing changed'
         required: false
         default: false
+        type: boolean
+      reach:
+        description: 'Advance the services to the newest compatible @kernhq packages first'
+        required: false
+        default: true
         type: boolean
 
 permissions: { contents: write, actions: write }
@@ -36,6 +59,9 @@ env:
   # The repositories that build an image. A release is defined by these; docs and website ship on
   # their own and carry no KERN_VERSION.
   SERVICES: core shell chat mail collab
+  # GITHUB_TOKEN reads this repository's releases; it cannot touch the service repositories. The
+  # fine-grained PAT is the other way round — scoped to the service repositories only.
+  SERVICES_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
 
 jobs:
   release:
@@ -43,38 +69,188 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
 
-      - name: Work out the previous version and the next one
-        id: v
+      - name: Find the previous release and what it contained
+        id: prev
         env:
-          # GITHUB_TOKEN reads this repository's releases; it cannot read the service repositories.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The fine-grained PAT is the other way round — scoped to the service repositories only.
-          SERVICES_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          PREV=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName \
-                 --jq '.[0].tagName // empty' | sed 's/^v//')
+          # A draft is a release whose feed never got attached; it is not something to count from.
+          PREV=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --exclude-pre-releases \
+                   --limit 1 --json tagName --jq '.[0].tagName // empty' | sed 's/^v//')
           PREV=${PREV:-0.0.0}
-          BUMP='${{ inputs.bump || 'auto' }}'
+          echo "version=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Previous release: $PREV"
 
-          # Read the bump out of the commits rather than asking anyone. The repositories are held to
-          # Conventional Commits, so the information is already there: a `feat:` is a minor, a `!`
-          # or a BREAKING CHANGE trailer is a major, and everything else is a patch.
+          # The module versions the previous images actually carried, from the signed feed. This is
+          # what the notes and the bump compare against — not what a range would have resolved to,
+          # because a cached layer can be older than that.
+          echo '{}' > prev-modules.json
+          if [ "$PREV" != "0.0.0" ] && curl -fsSL -o previous.json \
+               "https://github.com/${{ github.repository }}/releases/download/v$PREV/releases.json"; then
+            node -e '
+              const doc = JSON.parse(require("fs").readFileSync("previous.json", "utf8"))
+              const feed = JSON.parse(Buffer.from(doc.payload, "base64").toString("utf8"))
+              const entry = feed.releases.find((r) => r.version === process.argv[1])
+              require("fs").writeFileSync("prev-modules.json", JSON.stringify(entry?.modules ?? {}))
+            ' "$PREV"
+            echo "Modules in v$PREV: $(cat prev-modules.json)"
+          else
+            echo "::warning::No feed for v$PREV could be read; module moves will be reported from the ranges instead."
+          fi
+
+      - name: Advance every service to the newest compatible @kernhq packages
+        id: reach
+        if: inputs.reach != false
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/reach"
+          mkdir -p "$WORK"
+          echo "outcome=none" >> "$GITHUB_OUTPUT"
+          : > reach-shas.txt
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FILES=""
+          for repo in $SERVICES; do
+            # The token in the URL is what lets the pushes below authenticate; the runner is
+            # thrown away with it.
+            git clone --quiet --depth=50 "https://x-access-token:$GH_TOKEN@github.com/KernAIO/$repo" "$WORK/$repo"
+            FILES="$FILES $WORK/$repo/package.json"
+          done
+
+          # One computation for every service, so core and shell agree on each module's version.
+          # shellcheck disable=SC2086
+          if ! node scripts/reach.mjs --write --json $FILES > reach.json; then
+            echo "outcome=failed" >> "$GITHUB_OUTPUT"
+            echo "reason=reach.mjs could not resolve the registry" >> "$GITHUB_OUTPUT"
+            echo "::warning::The reach could not be computed; releasing main as it is."
+            exit 0
+          fi
+
+          PENDING=0
+          for repo in $SERVICES; do
+            cd "$WORK/$repo"
+            if git diff --quiet -- package.json && [ -f pnpm-lock.yaml ]; then
+              echo "$repo: nothing to advance"
+              continue
+            fi
+            # The lockfile is what makes the image's contents a committed fact: Docker's deps layer
+            # is keyed on it, so a moved lockfile is a rebuilt layer, and a frozen install in CI
+            # proves the same tree builds there. `strict-peer-dependencies` in the host's .npmrc
+            # turns an incompatible module into a failure here, before anything is pushed.
+            if ! pnpm install --lockfile-only; then
+              echo "outcome=failed" >> "$GITHUB_OUTPUT"
+              echo "reason=$repo: pnpm could not produce a lockfile for the advanced ranges" >> "$GITHUB_OUTPUT"
+              echo "::warning::$repo: the advanced ranges do not resolve; releasing main as it is."
+              exit 0
+            fi
+            git add package.json pnpm-lock.yaml
+            git commit -q -m "chore(release): reach the newest compatible @kernhq packages" \
+              -m "Advanced by the nightly release so the images carry the modules published since the last one."
+            git push -q --force origin "HEAD:refs/heads/release/reach"
+            git rev-parse HEAD | sed "s/^/$repo /" >> "$GITHUB_WORKSPACE/reach-shas.txt"
+            echo "$repo: pushed $(git rev-parse --short HEAD) to release/reach"
+            PENDING=$((PENDING + 1))
+          done
+          if [ "$PENDING" -gt 0 ]; then echo "outcome=pending" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Wait for CI on every reach branch
+        id: reach-ci
+        if: steps.reach.outputs.outcome == 'pending'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          FAILED=""
+          while read -r repo sha; do
+            .github/scripts/wait-green.sh "KernAIO/$repo" "$sha" 45 || FAILED="$FAILED $repo"
+          done < reach-shas.txt
+          if [ -n "$FAILED" ]; then
+            echo "outcome=failed" >> "$GITHUB_OUTPUT"
+            echo "reason=CI failed on the release/reach branch of:$FAILED" >> "$GITHUB_OUTPUT"
+            echo "::warning::CI failed on release/reach in:$FAILED. Releasing main as it is; the branch is left for a person to read."
+          else
+            echo "outcome=green" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Land the reach on main — every service, or none
+        id: land
+        if: steps.reach-ci.outputs.outcome == 'green'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          while read -r repo sha; do
+            cd "$RUNNER_TEMP/reach/$repo"
+            if git push -q origin "$sha:refs/heads/main"; then
+              echo "$repo: main is now ${sha:0:8}"
+              continue
+            fi
+            # main moved while CI ran. The reach only touches package.json and the lockfile, so
+            # replay it on top and let the green-main check below wait for the new commit's CI.
+            git fetch -q origin main
+            if git rebase -q origin/main; then
+              git push -q origin "HEAD:refs/heads/main"
+              echo "$repo: main moved during CI; reach rebased and landed as $(git rev-parse --short HEAD)"
+            else
+              echo "::error::$repo: main moved during CI and the reach no longer applies. Some services have the new pins and this one does not — resolve release/reach by hand before the next release."
+              exit 1
+            fi
+          done < reach-shas.txt
+          echo "landed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Work out the next version
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+          PREV: ${{ steps.prev.outputs.version }}
+          BUMP_INPUT: ${{ inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+          BUMP="$BUMP_INPUT"
           if [ "$BUMP" = "auto" ]; then
             BUMP=patch
+            # Read the bump out of the commits rather than asking anyone. The repositories are held
+            # to Conventional Commits, so the information is already there: a `feat:` is a minor,
+            # a `!` or a BREAKING CHANGE trailer is a major, and everything else is a patch.
             for repo in $SERVICES; do
               if [ "$PREV" = "0.0.0" ]; then
-                LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" --jq '.[].commit.message')
+                LOG=$(gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" --jq '.[].commit.message')
               else
-                LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/compare/v$PREV...main" --jq '.commits[].commit.message' 2>/dev/null || echo "")
+                LOG=$(gh api "/repos/KernAIO/$repo/compare/v$PREV...main" --jq '.commits[].commit.message' 2>/dev/null || echo "")
               fi
-              # A subject like `feat(core)!: ...`, or a BREAKING CHANGE trailer anywhere in the body.
               if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:' || echo "$LOG" | grep -q 'BREAKING CHANGE'; then
                 BUMP=major; break
               fi
               if echo "$LOG" | grep -qE '^feat(\([^)]*\))?:'; then BUMP=minor; fi
             done
+            # A module that moved a minor moved the platform a minor: its own commits said `feat:`
+            # when it published, and this release is the first time an instance can have it.
+            if [ -f reach.json ] && [ "${{ steps.land.outputs.landed }}" = "true" ] && [ "$BUMP" = "patch" ]; then
+              MODULE_BUMP=$(node -e '
+                const reach = JSON.parse(require("fs").readFileSync("reach.json", "utf8"))
+                const prev = JSON.parse(require("fs").readFileSync("prev-modules.json", "utf8"))
+                const minor = (v) => v.split(".").slice(0, 2).join(".")
+                let bump = "patch"
+                for (const [id, m] of Object.entries(reach.modules)) {
+                  const from = prev[id] ?? m.from
+                  if (from && m.to && minor(from) !== minor(m.to)) bump = "minor"
+                }
+                for (const f of Object.values(reach.framework))
+                  if (f.from && f.to && minor(f.from) !== minor(f.to)) bump = "minor"
+                console.log(bump)
+              ')
+              echo "Module and framework moves say: $MODULE_BUMP"
+              BUMP="$MODULE_BUMP"
+            fi
             echo "Commits since v$PREV say: $BUMP"
           fi
 
@@ -90,7 +266,6 @@ jobs:
             minor) MI=$((MI+1)); PA=0 ;;
             patch) PA=$((PA+1)) ;;
           esac
-          echo "prev=$PREV"   >> "$GITHUB_OUTPUT"
           echo "next=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
           echo "Previous $PREV -> next $MA.$MI.$PA ($BUMP)"
 
@@ -98,9 +273,9 @@ jobs:
         id: changed
         env:
           GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+          PREV: ${{ steps.prev.outputs.version }}
         run: |
           set -euo pipefail
-          PREV='${{ steps.v.outputs.prev }}'
           CHANGED=false
           for repo in $SERVICES; do
             if [ "$PREV" = "0.0.0" ]; then CHANGED=true; break; fi
@@ -110,14 +285,17 @@ jobs:
             echo "$repo: $AHEAD commits ahead of v$PREV"
             if [ "$AHEAD" = "missing" ] || [ "${AHEAD:-0}" -gt 0 ]; then CHANGED=true; fi
           done
+          # A landed reach is a change even when no service commit is: the images will carry
+          # different modules.
+          if [ "${{ steps.land.outputs.landed }}" = "true" ]; then CHANGED=true; fi
           if [ "${{ inputs.force || false }}" = "true" ]; then CHANGED=true; fi
           echo "value=$CHANGED" >> "$GITHUB_OUTPUT"
 
       - name: Nothing to release
         if: steps.changed.outputs.value != 'true'
-        run: echo "No service repository moved since v${{ steps.v.outputs.prev }} — stopping."
+        run: echo "Nothing moved since v${{ steps.prev.outputs.version }} — stopping."
 
-      - name: Refuse to release a red main
+      - name: Refuse to release a main whose CI is not green
         if: steps.changed.outputs.value == 'true'
         env:
           GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
@@ -125,17 +303,15 @@ jobs:
           set -euo pipefail
           # Images are built by docker.yml, which runs whether or not ci.yml passed — so without
           # this, a main that fails lint or tests still becomes a release and rolls onto the cloud
-          # unattended. The nightly is only safe because CI is the gate; check that it actually is.
+          # unattended. The nightly is only safe because CI is the gate; check that it actually
+          # is, and wait for it rather than reading a run that has not finished.
           RED=""
           for repo in $SERVICES; do
             SHA=$(gh api "/repos/KernAIO/$repo/git/ref/heads/main" --jq '.object.sha')
-            CONCLUSION=$(gh api "/repos/KernAIO/$repo/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
-              --jq '.workflow_runs[0].conclusion // "missing"')
-            echo "$repo @ ${SHA:0:8}: $CONCLUSION"
-            if [ "$CONCLUSION" != "success" ]; then RED="$RED $repo($CONCLUSION)"; fi
+            .github/scripts/wait-green.sh "KernAIO/$repo" "$SHA" 45 || RED="$RED $repo"
           done
           if [ -n "$RED" ]; then
-            echo "::error::Not releasing —$RED. Fix main, or dispatch this workflow again once CI is green."
+            echo "::error::Not releasing —$RED is not green on main. Fix main, or dispatch this workflow again once CI is green."
             exit 1
           fi
 
@@ -177,15 +353,17 @@ jobs:
             done
           done
 
-      - name: Publish the release notes
+      - name: Write the release notes and publish them as a draft
         if: steps.changed.outputs.value == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SERVICES_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+          PREV: ${{ steps.prev.outputs.version }}
+          NEXT: ${{ steps.v.outputs.next }}
+          LANDED: ${{ steps.land.outputs.landed || 'false' }}
+          REACH_REASON: ${{ steps.reach-ci.outputs.reason || steps.reach.outputs.reason || '' }}
         run: |
           set -euo pipefail
-          V='v${{ steps.v.outputs.next }}'
-          PREV='v${{ steps.v.outputs.prev }}'
+          V="v$NEXT"
           WORK=$(mktemp -d)
 
           # One section per service repository: its commits since the previous version, grouped
@@ -193,40 +371,88 @@ jobs:
           # a read of the log, not a judgement call — and the same section becomes that
           # repository's own GitHub release, so its Releases tab is a changelog in its own right.
           for repo in $SERVICES; do
-            if [ "$PREV" = "v0.0.0" ]; then
+            if [ "$PREV" = "0.0.0" ]; then
               LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" \
                       --jq '.[].commit.message | split("\n")[0]' 2>/dev/null || true)
             else
-              LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/compare/$PREV...main" \
+              LOG=$(GH_TOKEN="$SERVICES_TOKEN" gh api "/repos/KernAIO/$repo/compare/v$PREV...$V" \
                       --jq '.commits[] | .commit.message | split("\n")[0]' 2>/dev/null || true)
             fi
-            # Version commits are bookkeeping, not changelog.
-            LOG=$(echo "$LOG" | grep -v '^chore: version' | sort -u || true)
+            # Version and reach commits are bookkeeping, not changelog.
+            LOG=$(echo "$LOG" | grep -vE '^chore(\(release\))?: (version|reach)' | sort -u || true)
             [ -n "$LOG" ] || continue
             echo "$LOG" | grep -c . > "$WORK/$repo.count"
-            FILE="$WORK/$repo.md"
             {
               echo "### $repo"
               echo
               for TYPE in feat fix perf refactor docs test ci; do
-                GROUP=$(echo "$LOG" | grep -E "^$type" || true)
+                GROUP=$(echo "$LOG" | grep -E "^$TYPE(\([^)]*\))?!?:" || true)
                 [ -n "$GROUP" ] || continue
                 echo "**${TYPE^}**"
                 echo
                 echo "$GROUP" | sed 's/^/- /'
                 echo
               done
-              OTHER=$(echo "$LOG" | grep -vE '^(feat|fix|perf|refactor|docs|test|ci|chore)' || true)
+              OTHER=$(echo "$LOG" | grep -vE '^(feat|fix|perf|refactor|docs|test|ci|chore)(\([^)]*\))?!?:' || true)
               if [ -n "$OTHER" ]; then
                 echo "**Other**"
                 echo
                 echo "$OTHER" | sed 's/^/- /'
                 echo
               fi
-              echo "[compare $PREV...$V](https://github.com/KernAIO/$repo/compare/$PREV...$V)"
+              echo "[compare v$PREV...$V](https://github.com/KernAIO/$repo/compare/v$PREV...$V)"
               echo
-            } > "$FILE"
+            } > "$WORK/$repo.md"
           done
+
+          # Every module this release carries at a different version from the last one, with the
+          # changelog entries of each version in between — read from the module repository's own
+          # releases, which `publish.yml` writes from its CHANGELOG. This is the part a self-hoster
+          # cannot work out from the service commits, and the part that used to be missing.
+          if [ -f reach.json ] && [ "$LANDED" = "true" ]; then
+            node - "$WORK/modules.md" <<'NODE'
+              const { execFileSync } = require('node:child_process')
+              const fs = require('node:fs')
+              const out = process.argv[2]
+              const reach = JSON.parse(fs.readFileSync('reach.json', 'utf8'))
+              const prev = JSON.parse(fs.readFileSync('prev-modules.json', 'utf8'))
+              const parse = (v) => v.split('-')[0].split('.').map(Number)
+              const gt = (a, b) => { const [x, y] = [parse(a), parse(b)]; return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] }
+              const lines = []
+              const moved = []
+              for (const [id, m] of Object.entries(reach.modules).sort()) {
+                const from = prev[id] ?? m.from
+                if (!from || !m.to || from === m.to) continue
+                moved.push(`| ${id} | ${from} | ${m.to} |`)
+                lines.push(`### ${id} ${from} → ${m.to}`, '')
+                const repo = `KernAIO/module-${id}`
+                let versions = []
+                try {
+                  versions = JSON.parse(execFileSync('npm', ['view', m.name, 'versions', '--json'], { encoding: 'utf8' }))
+                    .filter((v) => gt(v, from) > 0 && gt(v, m.to) <= 0 && !v.includes('-'))
+                    .sort((a, b) => gt(a, b))
+                } catch {}
+                for (const v of versions) {
+                  let body = ''
+                  try {
+                    body = execFileSync('gh', ['release', 'view', `v${v}`, '--repo', repo, '--json', 'body', '-q', '.body'],
+                      { encoding: 'utf8', env: { ...process.env, GH_TOKEN: process.env.SERVICES_TOKEN } }).trim()
+                  } catch {}
+                  lines.push(`**${v}** — [release](https://github.com/${repo}/releases/tag/v${v})`, '')
+                  if (body) lines.push(body.replace(/^## .*\n/, '').trim(), '')
+                }
+              }
+              const fw = Object.entries(reach.framework).filter(([, f]) => f.from && f.to && f.from !== f.to)
+              const doc = []
+              if (moved.length) {
+                doc.push('## Modules', '', '| module | was | now |', '|:--|:--|:--|', ...moved, '', ...lines)
+              }
+              if (fw.length) {
+                doc.push('## Framework', '', ...fw.map(([n, f]) => `- \`${n}\` ${f.from} → ${f.to} — [releases](https://github.com/KernAIO/kernel/releases)`), '')
+              }
+              fs.writeFileSync(out, doc.join('\n'))
+          NODE
+          fi
 
           {
             echo "One platform version — every image and every module inside it carries \`$V\`."
@@ -241,30 +467,40 @@ jobs:
               fi
             done
             echo
+            if [ -s "$WORK/modules.md" ]; then cat "$WORK/modules.md"; echo; fi
+            if [ -n "$REACH_REASON" ]; then
+              echo "> **Modules were not advanced in this release.** $REACH_REASON"
+              echo
+            fi
+            if ls "$WORK"/*.md >/dev/null 2>&1; then echo "## Services"; echo; fi
             for repo in $SERVICES; do
               [ -f "$WORK/$repo.md" ] && cat "$WORK/$repo.md"
             done
           } > "$WORK/body.md"
 
+          # A draft: the feed is what makes a release installable, and it is attached by
+          # release-feed.yml, which publishes the release once it is there. Until then
+          # `releases/latest` still points at the previous release, so an instance checking in
+          # the meantime reads a feed that exists rather than a 404.
           if gh release view "$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release edit "$V" --repo "${{ github.repository }}" --notes-file "$WORK/body.md"
           else
-            gh release create "$V" --repo "${{ github.repository }}" --title "$V" --notes-file "$WORK/body.md"
+            gh release create "$V" --repo "${{ github.repository }}" --draft --title "$V" --notes-file "$WORK/body.md"
           fi
 
           # The same section becomes the service repository's own release — its Releases tab is
           # a changelog, not a list of bare v-tags the umbrella created over there.
           for repo in $SERVICES; do
             [ -f "$WORK/$repo.md" ] || continue
-            if gh release view "$V" --repo "KernAIO/$repo" >/dev/null 2>&1; then continue; fi
+            if GH_TOKEN="$SERVICES_TOKEN" gh release view "$V" --repo "KernAIO/$repo" >/dev/null 2>&1; then continue; fi
             GH_TOKEN="$SERVICES_TOKEN" gh release create "$V" \
               --repo "KernAIO/$repo" --title "Kern $V" --notes-file "$WORK/$repo.md"
           done
 
       # Creating the release with GITHUB_TOKEN does not fire this repository's `release:` event —
-      # GitHub suppresses events a workflow's own token caused (workflow_dispatch is the one
-      # exception), so release-feed.yml never ran on its own. Dispatch it by name instead; the
-      # feed signs the release into releases.json and then dispatches rollout.yml itself.
+      # GitHub suppresses events a workflow's own token caused — so the feed is dispatched by name.
+      # It signs releases.json, attaches it, publishes the draft, and then dispatches the cloud
+      # rollout itself.
       - name: Hand the release to the feed
         if: steps.changed.outputs.value == 'true'
         env:
@@ -273,4 +509,11 @@ jobs:
           gh workflow run release-feed.yml \
             --repo "${{ github.repository }}" \
             --field version="${{ steps.v.outputs.next }}" \
+            --field previous="${{ steps.prev.outputs.version }}" \
             --field schema=additive
+
+      - name: Say so if the modules could not be advanced
+        if: steps.reach.outputs.outcome == 'failed' || steps.reach-ci.outputs.outcome == 'failed'
+        run: |
+          echo "::error::The release went out from main as it was, but the modules could not be advanced: ${{ steps.reach-ci.outputs.reason || steps.reach.outputs.reason }}. Read the release/reach branch in that repository; the usual cause is a module whose peer ranges have not caught up with the framework, and the fix is to republish the module."
+          exit 1
