@@ -108,6 +108,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   patch produces. `mod_inventory.counters` avoided repeating its own defect this way and only by
   luck: the fix for "multiple primary keys are not allowed" would otherwise have shipped as a second
   unguarded primary key on the same table.
+- **A stale snapshot makes `db:generate` re-emit what hand-written migrations already built.**
+  Every hand-written migration (RLS, a sequence, a repair) leaves `migrations/meta` where it was, so
+  the next generate diffs `schema.ts` against a snapshot several migrations old and emits an
+  unguarded `CREATE UNIQUE INDEX` and `ADD COLUMN` for objects every existing database already has
+  — a 42P07 during the module's own migration, which is a host service that never binds its port.
+  `module-inventory`'s 0009 came out of the generator three objects too long. Keep the snapshot the
+  generator wrote (it is the first current one), cut the SQL down to what is actually new, guard
+  it, and run `scripts/check-snapshot-drift.mjs` — that check is the only thing that proves the
+  snapshot and the database describe the same thing, and every module that hand-writes a migration
+  should carry it (`module-hr` and `module-inventory` do).
 - **Idempotent is not the same as effective, and the second one has no guard.** A replayed
   `create table if not exists` reports success and changes nothing, so a *rewritten* migration
   silently leaves an existing schema exactly as it was — the boot failure is gone and the change
