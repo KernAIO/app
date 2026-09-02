@@ -10,8 +10,19 @@
  * A string counts as UNTRANSLATED when the locale's value is identical to the English value
  * (a copy, not a translation). MISSING means the key is absent from that locale's bundle.
  * Both are reported; leaves are counted individually, so a plural entry is two strings.
- * The shell surface excludes the inlang structural leaves of a variant message — its
- * `declarations` and `selectors` are ICU logic, the same in every locale on purpose.
+ *
+ * Three kinds of slot are dropped before anything is counted, because no locale can translate
+ * them: inlang plumbing (a variant message's `declarations` and `selectors`, and the `$schema`
+ * line), prose-free values (an ellipsis, a separator, a line built only from placeholders), and
+ * the input formats enumerated in EXAMPLE_VALUES.
+ *
+ * What the table still flags is by design, so classify before briefing a translation batch. An
+ * audit of every flagged slot on 2026-09-02 found only brand and product names (Quire, Kern,
+ * Cursor, VS Code, Claude Code, ChatGPT, Codex), words German writes the same way or has borrowed
+ * (Name, Status, Filter, Dashboard, Workspace, Backlog, Epic — the bundle's own usage is the
+ * arbiter, and the register differs per module: hr-de is Sie-form, tracker-de and quire-de are
+ * du-form), and module-template's English-only starter strings, which its README says are
+ * deliberate. The genuinely translatable residue was 8 strings plus one wrong value, all shipped.
  *
  * Usage: node scripts/i18n-coverage.mjs [--root /path/to/kern]
  * Prints a markdown table plus per-module detail. Exit 1 only when a surface cannot be read.
@@ -52,21 +63,68 @@ const flat = (v, prefix = '') => {
  * "local n = count: number") and `selectors` ("countPlural") are ICU logic, identical in every
  * locale by design — only the `match` values are prose. Counting them as "still English" put 124
  * phantom strings in German's untranslated column, a false alarm larger than the real gap.
+ * The file's top-level `$schema` is the same thing one level up: an editor hint holding the same
+ * URL in all five bundles.
  */
-const isInlangStructure = (key) => /\.(declarations|selectors)\.\d+$/.test(key)
+const isInlangStructure = (key) => key === '$schema' || /\.(declarations|selectors)\.\d+$/.test(key)
+
+/**
+ * Values that are an input format rather than a sentence. The user types these back, so a
+ * translated one would be wrong rather than merely English — and nothing mechanical can tell
+ * "1h30m" from a phrase, so they are named.
+ */
+const EXAMPLE_VALUES = new Set([
+  // KQL syntax. The query language the parser accepts is the same in every locale.
+  'tracker.kql_placeholder',
+  // "1h30m" is what parseDuration reads, and the units stay h/m: a Persian ۱س۳۰د shipped once and
+  // was reverted, because the parser rejects it.
+  'tracker.time_placeholder',
+  // "eng-core" shows the channel-slug format, not a channel anybody has.
+  'chat.channel_name_placeholder',
+])
+
+/**
+ * What is left of a value once ICU placeholders, punctuation, symbols and digits are removed.
+ * Nothing left means it is a template — "…", "{name} · {date}", "— {n} —" — and a locale repeating
+ * it verbatim is not an untranslated string, because there is no language in it.
+ */
+const prose = (v) =>
+  String(v)
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/[\s\p{P}\p{S}\d·—–-]/gu, '')
+
+/**
+ * Flat keys to leave out of every locale's map for one surface, decided from the English bundle:
+ * the enumerated input examples, and every entry with no prose in it. A plural qualifies only when
+ * all of its forms do — one translatable form makes the whole entry translatable.
+ */
+function excludedKeys(en, isStructural = () => false) {
+  const drop = new Set()
+  for (const [key, value] of Object.entries(en)) {
+    const entries = Object.entries(flat(value, key)).filter(([k]) => !isStructural(k))
+    if (!entries.length) continue
+    if (EXAMPLE_VALUES.has(key) || entries.every(([, v]) => !prose(v))) for (const [k] of entries) drop.add(k)
+  }
+  return drop
+}
 
 /** shell/messages/<locale>.json */
 function readShell() {
   const dir = join(ROOT, 'shell', 'messages')
   if (!existsSync(dir)) return null
-  const byLocale = {}
+  const raw = {}
   for (const loc of ['en', ...LOCALES]) {
     const file = join(dir, `${loc}.json`)
     if (!existsSync(file)) EXIT_BAD(`missing ${file}`)
-    const all = flat(JSON.parse(readFileSync(file, 'utf8')))
-    // Dropped from English too, so the key totals and the untranslated counts stay comparable.
-    byLocale[loc] = Object.fromEntries(Object.entries(all).filter(([k]) => !isInlangStructure(k)))
+    raw[loc] = JSON.parse(readFileSync(file, 'utf8'))
   }
+  const drop = excludedKeys(raw.en, isInlangStructure)
+  const byLocale = {}
+  // Dropped from English too, so the key totals and the untranslated counts stay comparable.
+  for (const loc of ['en', ...LOCALES])
+    byLocale[loc] = Object.fromEntries(
+      Object.entries(flat(raw[loc])).filter(([k]) => !isInlangStructure(k) && !drop.has(k)),
+    )
   return { name: 'shell (Paraglide)', byLocale }
 }
 
@@ -112,8 +170,12 @@ function readModule(repo) {
     if (!existsSync(file)) continue
     const blocks = extractLocaleBlocks(readFileSync(file, 'utf8'))
     if (!blocks.en) continue
+    const drop = excludedKeys(blocks.en)
     const byLocale = {}
-    for (const loc of ['en', ...LOCALES]) byLocale[loc] = flat(blocks[loc] ?? {})
+    for (const loc of ['en', ...LOCALES])
+      byLocale[loc] = Object.fromEntries(
+        Object.entries(flat(blocks[loc] ?? {})).filter(([k]) => !drop.has(k)),
+      )
     return { name: repo, byLocale }
   }
   return null
