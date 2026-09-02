@@ -416,8 +416,9 @@ pnpm dev       # every service with hot reload
   two partitioned tables, because a partitioned parent carries an internal (`i`) `pg_depend` row on
   **itself** and the query excluded anything with an `i` dependency — so the moment the services
   first ran as `kern_app` (0.2.0) every queue poll failed with `permission denied for table job`
-  and no job or email ran for two hours while `/api/health` stayed green. And `ALTER TABLE … OWNER`
-  on a partitioned parent does **not** recurse to its partitions. The rule now: skip only
+  for two hours while `/api/health` stayed green (`mod_hr.punches`, partitioned the same way, was
+  one `ALTER` from the same failure). And `ALTER TABLE … OWNER` on a partitioned parent does
+  **not** recurse to its partitions. The rule now: skip only
   extension members and column-owned sequences; move every other relation, partitions included.
   `selfhost.yml` runs `db-init` twice against a database that already has superuser-owned tables, a
   serial, a standalone sequence, and a partitioned table with a partition. Anything in `db-init`
