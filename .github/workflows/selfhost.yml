@@ -126,6 +126,9 @@ jobs:
           set -euo pipefail
           missing=0
           for var in $(grep -ohE '\$\{[A-Z_][A-Z0-9_]*' docker-compose.yml | sed 's/^\${//' | sort -u); do
+            # PWD is the shell's, not the operator's: the updater mounts `${KERN_DIR:-${PWD}}` so a
+            # host without KERN_DIR still resolves its own directory. Nothing to document.
+            [ "$var" = "PWD" ] && continue
             grep -qE "^${var}=" .env.example || { echo "::error::${var} is not in .env.example"; missing=1; }
           done
           [ "$missing" -eq 0 ] && echo "✔ every variable documented"
