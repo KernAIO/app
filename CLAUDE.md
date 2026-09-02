@@ -410,12 +410,19 @@ pnpm dev       # every service with hot reload
   the next rollout, having run nowhere first.** `selfhost.yml` used to parse the file and stop.
   On 2026-09-02 an ownership-handover `db-init` landed on `main` in the afternoon and met the cloud
   at 18:04 in the nightly rollout: it ran `ALTER SEQUENCE … OWNER` on a serial's sequence apart from
-  its table (Postgres refuses; the fix is a `deptype = 'a'` exclusion, because `ALTER TABLE` carries
-  the sequence), exited 3, every container stayed `Created`, and the automatic rollback to 0.1.4
-  failed the same way — nineteen minutes of 503 until the ownership was fixed on the database by
-  hand and the containers started. `selfhost.yml` now runs `db-init` twice against a database that
-  already has superuser-owned objects. Anything in `db-init` runs on every instance at every deploy;
-  test it on a database that already exists, not on an empty one.
+  its table (Postgres refuses), exited 3, every container stayed `Created`, and the automatic
+  rollback to 0.1.4 failed the same way — nineteen minutes of 503 until the ownership was fixed on
+  the database by hand and the containers started. The same script had *always* skipped pg-boss's
+  two partitioned tables, because a partitioned parent carries an internal (`i`) `pg_depend` row on
+  **itself** and the query excluded anything with an `i` dependency — so the moment the services
+  first ran as `kern_app` (0.2.0) every queue poll failed with `permission denied for table job`
+  and no job or email ran for two hours while `/api/health` stayed green. And `ALTER TABLE … OWNER`
+  on a partitioned parent does **not** recurse to its partitions. The rule now: skip only
+  extension members and column-owned sequences; move every other relation, partitions included.
+  `selfhost.yml` runs `db-init` twice against a database that already has superuser-owned tables, a
+  serial, a standalone sequence, and a partitioned table with a partition. Anything in `db-init`
+  runs on every instance at every deploy; test it on a database that already exists, not on an
+  empty one — and when a query decides what to skip, print what it skipped.
 - **`selfhost/coolify/` mounts nothing.** A Compose file pasted into Coolify has no files beside it,
   so the Caddy config is a heredoc inside the container's command and the Postgres init script is
   gone (core's first migration creates the extensions anyway). Keep the heredoc free of `$` —

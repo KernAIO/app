@@ -286,7 +286,10 @@ services:
           AND c.relowner <> 'kern_app'::regrole
           AND NOT EXISTS (SELECT 1 FROM pg_depend d
                           WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
-                            AND d.deptype IN ('e', 'i', 'a'))
+                            AND d.deptype = 'e')
+          AND NOT (c.relkind = 'S' AND EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                            AND d.deptype IN ('a', 'i')))
         \gexec
 
         SELECT format('ALTER ROUTINE %s OWNER TO kern_app', p.oid::regprocedure)

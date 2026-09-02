@@ -46,17 +46,24 @@ jobs:
             sleep 2
           done
           # What an instance from before the handover looks like: a module schema, its migration
-          # bookkeeping with a serial primary key, and a plain table — all owned by the superuser.
+          # bookkeeping with a serial primary key, a plain table, a standalone sequence, and — the
+          # shape pg-boss uses for kern_jobs.job — a partitioned table with a partition. All owned by
+          # the superuser. A partitioned parent carries an *internal* dependency on itself and its
+          # partition an *auto* dependency on the parent, and ALTER TABLE OWNER recurses to neither:
+          # the two pg-boss tables were skipped by every handover before 2026-09-02 and the cloud
+          # lost its job queue for two hours the first time the services ran as kern_app.
           compose exec -T postgres psql -U kern -d kern -v ON_ERROR_STOP=1 -c "
             create schema mod_ci;
             create table mod_ci.__migrations (id serial primary key, hash text);
             create table mod_ci.things (id uuid primary key, name text);
-            create sequence mod_ci.standalone_seq;"
+            create sequence mod_ci.standalone_seq;
+            create table mod_ci.job (id uuid, created_on date) partition by range (created_on);
+            create table mod_ci.job_2026 partition of mod_ci.job for values from ('2026-01-01') to ('2027-01-01');"
           compose run --rm db-init
           compose run --rm db-init
           OWNERS=$(compose exec -T postgres psql -U kern -d kern -tAc "
             select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-            where n.nspname = 'mod_ci' and c.relkind in ('r','S') and pg_get_userbyid(c.relowner) <> 'kern_app'")
+            where n.nspname = 'mod_ci' and c.relkind in ('r','p','S') and pg_get_userbyid(c.relowner) <> 'kern_app'")
           [ "$OWNERS" = "0" ] || { echo "$OWNERS objects in mod_ci are still not owned by kern_app"; exit 1; }
           echo "✔ db-init handed every object to kern_app, and survives a second run"
 
