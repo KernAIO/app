@@ -39,7 +39,7 @@ on:
         default: false
         type: boolean
 
-permissions: { contents: read }
+permissions: { contents: read, issues: write }
 concurrency:
   group: cloud-rollout
   cancel-in-progress: false
@@ -414,3 +414,23 @@ jobs:
           [ -x "$RUNNER_TEMP/remote" ] || exit 0
           echo 'rm -f /tmp/kern-rollout-lib.sh' | "$RUNNER_TEMP/remote" || true
           rm -f ~/.ssh/rollout_key
+
+      # A rollout that failed has either rolled the cloud back or left it in maintenance mode; both
+      # need a person by morning. An issue is what GitHub already emails to everyone watching the
+      # repository — one thread per open failure, not one per night.
+      - name: Tell somebody
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          live=$(curl -fsS --max-time 10 https://app.kernaio.com/api/health | jq -r '.version // "unreachable"' || echo unreachable)
+          body="The cloud rollout of ${{ inputs.version }} ended red on $(date -u +%Y-%m-%d). app.kernaio.com reports: $live. Read the run: $url
+
+          Runbook: docs/developers/releases-and-migrations.md, *When the nightly is red*."
+          existing=$(gh issue list --repo "${{ github.repository }}" --label release-failure --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "$body"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "Cloud rollout of ${{ inputs.version }} failed on $(date -u +%Y-%m-%d)" --label release-failure --body "$body"
+          fi

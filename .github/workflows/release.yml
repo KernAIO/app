@@ -50,7 +50,7 @@ on:
         default: true
         type: boolean
 
-permissions: { contents: write, actions: write }
+permissions: { contents: write, actions: write, issues: write }
 concurrency:
   group: release
   cancel-in-progress: false
@@ -554,3 +554,22 @@ jobs:
         run: |
           echo "::error::The release went out from main as it was, but the modules could not be advanced: ${{ steps.reach-ci.outputs.reason || steps.reach.outputs.reason }}. Read the release/reach branch in that repository; the usual cause is a module whose peer ranges have not caught up with the framework, and the fix is to republish the module."
           exit 1
+
+      # A red run at 02:00 that nobody reads is a release that silently did not happen. An issue is
+      # what GitHub already emails to everyone watching the repository, so a failure opens one —
+      # or comments on the one still open, so a week of red nights is one thread rather than seven.
+      - name: Tell somebody
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="The release workflow ended red on $(date -u +%Y-%m-%d) (${{ github.event_name }}). Read the run: $url
+
+          Runbook: docs/developers/releases-and-migrations.md, *When the nightly is red*."
+          existing=$(gh issue list --repo "${{ github.repository }}" --label release-failure --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "$body"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "Nightly release failed on $(date -u +%Y-%m-%d)" --label release-failure --body "$body"
+          fi
