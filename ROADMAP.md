@@ -33,8 +33,17 @@ Verified on 2026-09-02 by reading the registry, the routes and the release feed 
   comments, draft/publish, published sites addressed by path, diagrams and embeds, databases.
 - **Mail** — outbound email per workspace through SMTP, Mailgun, SES, Postmark or Resend, with
   templates, delivery log, bounces and suppression; intake addresses that turn a reply into an issue.
-- **HR** — directory, org chart, offices, leave, attendance, approvals, subject access and erasure.
-  Onboarding checklists are the one part not built.
+- **HR** — directory, org chart, offices, legal entities and cost centres, leave, attendance,
+  approvals, subject access and erasure. Onboarding checklists are the one part not built.
+  Reachability audited 2026-09-03: of the 137 contract procedures, 129 have client call sites; the
+  six that had none (entities and cost-centre writes — `payroll.export.v1` needs an employer to
+  exist, so a fresh workspace could not run payroll at all) got the Entities settings screen. The
+  eight still without callers are deliberate: four single-get reads covered by list + client-side
+  filter (`offices.get`, `policies.get`, `leave.requests.get`, `entities.get`), `approvals.get`
+  (the inbox already carries steps and decisions), `attendance.days.recompute` (a server job calls
+  the internal function), `policies.resolveFor` (an explainer endpoint with no natural screen) and
+  `people.history` (the field-change log; the person card tells the employment story through
+  `employment.history`).
 - **Inventory** — the asset register: what the company owns, who holds it, purchase and warranty,
   categories, full history. Reachability audited 2026-09-03: every one of the 32 contract
   procedures (assets, fields, custody, categories, repairs, attachments, stats) has a client call
