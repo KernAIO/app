@@ -103,9 +103,14 @@ jobs:
             echo "::warning::No feed for v$PREV could be read; module moves will be reported from the ranges instead."
           fi
 
+      # On a `schedule` event every `inputs.*` is null, and GitHub's expression language coerces
+      # null and false to the same number — so `inputs.reach != false` was *false* on every nightly
+      # run and this step was skipped from the day it was written. Two scheduled releases shipped
+      # with the reach silently absent while the run reported success, and the only reach that ever
+      # ran was a hand dispatch. Name the event rather than testing an input that is not there.
       - name: Advance every service to the newest compatible @kernhq packages
         id: reach
-        if: inputs.reach != false
+        if: github.event_name == 'schedule' || inputs.reach == true
         env:
           GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
         run: |
@@ -316,6 +321,36 @@ jobs:
             echo "::error::Not releasing —$RED is not green on main. Fix main, or dispatch this workflow again once CI is green."
             exit 1
           fi
+
+      - name: Refuse to release a core and a shell that disagree about a module
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.KERN_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A module's server runs in `core` and its client in `shell`, so one release with two
+          # versions of one module is a contract mismatch: the client calls procedures the server
+          # has never heard of and every one of them 404s. The reach keeps the two in step when it
+          # lands, but a reach that fails releases main as it is, and main is edited by hand —
+          # shell reached module-hr 0.22.0 on 2026-09-03 while core sat on 0.20.3. Read what each
+          # lockfile actually resolves, not the ranges, because a range says what may install and
+          # the lockfile says what the image will carry.
+          resolved() { # resolved <repo> -> "name version" per @kernhq package the lockfile pins
+            gh api -H 'Accept: application/vnd.github.raw' "/repos/KernAIO/$1/contents/pnpm-lock.yaml?ref=main" \
+              | grep -oE "^  '?@kernhq/(module-[a-z]+|contracts)@[0-9]+\.[0-9]+\.[0-9]+" \
+              | sed -E "s/^  '?//; s/@([0-9])/ \1/" | sort -u
+          }
+          resolved core > core.txt
+          resolved shell > shell.txt
+          MISMATCH=$(join core.txt shell.txt | awk '$2 != $3 { printf "%s: core %s, shell %s\n", $1, $2, $3 }')
+          if [ -n "$MISMATCH" ]; then
+            echo "::error::Not releasing — core and shell would ship different versions of the same contract:"
+            echo "$MISMATCH" | sed 's/^/::error::  /'
+            echo "::error::Run the reach (dispatch this workflow with reach on) or move the one that is behind; never release the pair as it is."
+            exit 1
+          fi
+          echo "core and shell agree on every module and on the contracts:"
+          join core.txt shell.txt | awk '{ printf "  %s %s\n", $1, $2 }'
 
       - name: Tag every service repository
         if: steps.changed.outputs.value == 'true'

@@ -488,6 +488,22 @@ pnpm dev       # every service with hot reload
   goes out from `main` as it is and the run ends red naming the module to republish. Tagging
   another repository's `main` needs `KERN_RELEASE_TOKEN`; `GITHUB_TOKEN` cannot, and the
   fine-grained PAT cannot see the umbrella — a step that touches both needs one token for each.
+- **`if: inputs.x != false` is false on a `schedule` run, so the step is skipped.** Every
+  `inputs.*` is null when a workflow fires from cron, and GitHub's expression language coerces null
+  and false to the same number before comparing — so a step guarded that way runs on a hand dispatch
+  and never on the nightly, while the run still reports success. The reach in `release.yml` sat
+  behind exactly that condition and was skipped on every scheduled release it was ever part of
+  (two of them, 2026-09-02 and -03: `hr` 0.21.0 was on npm five hours before the run and v0.2.1
+  shipped 0.20.3). Guard on the event instead: `github.event_name == 'schedule' || inputs.x ==
+  true`. And when a step's absence is invisible in a green run, read the run's *step conclusions*
+  (`gh run view --json jobs`) rather than its conclusion — that is where "skipped" shows.
+- **A release is a claim that core and shell agree, and only the reach used to make it true.**
+  A reach that fails releases main as it is, and main is edited by hand — shell reached
+  `module-hr` 0.22.0 on 2026-09-03 while core sat on 0.20.3, and the next release would have
+  shipped a client calling procedures the server did not have, every one a 404. `release.yml`
+  now reads both lockfiles and refuses to tag when any `@kernhq/module-*` or `@kernhq/contracts`
+  resolves differently in the two; the fix is always to move the one that is behind, never to
+  release the pair.
 - **Renovate is installed and has never opened a pull request here.** ADR 0009 leaned on its
   `@kernhq/*` automerge for months; zero PRs and zero dependency dashboards in any repository. Do
   not lean on it for anything a release depends on; the reach is what moves module pins.
