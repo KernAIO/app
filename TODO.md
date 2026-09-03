@@ -93,7 +93,9 @@ every failure is a product bug and gets a CI test where one is possible.
 - [ ] `./kern-backup.sh` runs; a restore from its output works on a second VM.
 - [ ] Coolify: paste `selfhost/coolify/docker-compose.yml`, deploy, sign in; set `KERN_VERSION`
       and redeploy to upgrade.
-- [ ] Fix `get.kernaio.com`'s redirect rule to the canonical `KernAIO/app` URL.
+- [x] `get.kernaio.com` redirects (302) to `raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh`
+      (2026-09-04; it pointed at the old `KernAIO/kern` path). It is still a script to download and
+      run, never to pipe.
 - [ ] `install.sh` and `kern-upgrade.sh` are the only two scripts a self-hoster runs; both are
       shellcheck-clean and tested in `selfhost.yml` — add whatever the VM run found.
 
