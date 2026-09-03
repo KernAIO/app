@@ -17,6 +17,7 @@
 # Restoring is deliberately manual — see RESTORE.txt inside each backup.
 set -euo pipefail
 
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 DIR="${KERN_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 cd "$DIR"
 
@@ -31,7 +32,7 @@ fail() { printf '\n\033[31m✖ %s\033[0m\n' "$1" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     # The usage is the comment at the top of this file; print it rather than keep a second copy.
-    -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --list) LIST_ONLY=true ;;
     --keep) shift; [ $# -gt 0 ] || fail "--keep needs a number."; KEEP="$1" ;;
     --keep=*) KEEP="${1#--keep=}" ;;
