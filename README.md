@@ -66,11 +66,14 @@ The published images are `amd64`, so an arm64 server needs images built for it. 
 ### 1. Run the installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
+bash install.sh
 ```
 
-The installer asks for your domain, an admin email address and an admin password. It writes them to
-`~/kern/.env` along with freshly generated secrets.
+The installer asks for your domain, an admin email address and an admin password — on the
+terminal, which is why it is downloaded first rather than piped into `bash`. It writes them to
+`~/kern/.env` along with freshly generated secrets. Docker with the Compose plugin has to be
+installed already.
 
 **Expected result:** the installer prints the address of your new Kern.
 

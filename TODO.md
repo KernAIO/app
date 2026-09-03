@@ -82,7 +82,8 @@ Done by running it on a machine nobody has touched, following only
 `docs.kernaio.com/self-hosting`. Every step that needed knowledge not on the page is a docs bug;
 every failure is a product bug and gets a CI test where one is possible.
 
-- [ ] Clean Ubuntu 24.04 VM: `curl -fsSL https://get.kernaio.com | bash` → first admin signs in,
+- [ ] Clean Ubuntu 24.04 VM: download and run `install.sh` (piping it into `bash` is refused by
+      the script itself — the docs said `| bash` until 2026-09-04) → first admin signs in,
       creates a workspace, files an issue, sends a chat message, edits a page.
 - [ ] `./kern-upgrade.sh --check` passes; the next nightly arrives; Admin → Updates shows it with
       the module diff.

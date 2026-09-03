@@ -135,7 +135,7 @@ file have to agree, and `pnpm pricing` has to import a clean plan catalogue.
 
 ### 4. A self-hoster gets from zero to upgraded and back — days 4–9
 
-*On a clean Ubuntu 24.04 VM, `curl -fsSL https://get.kernaio.com | bash` gives a working Kern; a
+*On a clean Ubuntu 24.04 VM, downloading and running `install.sh` gives a working Kern; a
 release later, the timer upgrades it inside the window; `kern-rollback.sh` undoes it;
 `kern-backup.sh` and a restore work.*
 
