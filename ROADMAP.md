@@ -83,6 +83,15 @@ Three people have to succeed without talking to us, and each one is a slice belo
 
 ## The two weeks
 
+**Where it stood on 2026-09-04**, from `TODO.md`: slice 1 has backups, a restore drill, an uptime
+watch, sshd hardening and the mailboxes done, and is **blocked on two things only the owner can
+buy** — a mail relay credential (no email has ever left the cloud) and Stripe keys; slice 3 is done
+except for six plan highlights to edit in Admin → Plans; slice 4 has not been run on a clean VM
+yet; slice 5 is built and documented (`KERN_EXTRA_MODULES`, `KERN_IMAGE_*`) and verified by
+building both images, not yet by a stranger; slice 6 has every module under a permission matrix and
+an isolation test — which found `mod_mail` had no row-level security at all, now fixed — the edge
+checked from outside, and the UX sweep green on every route; v1.0.0 is not cut.
+
 Six slices. A slice is done when the sentence at its head is true and somebody outside this project
 could confirm it; not when the code type-checks. Days are 2026-09-03 → 2026-09-16.
 
