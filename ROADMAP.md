@@ -83,7 +83,7 @@ Three people have to succeed without talking to us, and each one is a slice belo
 
 ## The two weeks
 
-**Where it stood on 2026-09-04**, from `TODO.md`: slice 1 has backups, a restore drill, an uptime
+**Where it stood on 2026-09-04**, from `TODO.md`: slice 1 is green everywhere; slice 2 has backups, a restore drill, an uptime
 watch, sshd hardening and the mailboxes done, and is **blocked on two things only the owner can
 buy** — a mail relay credential (no email has ever left the cloud) and Stripe keys; slice 3 is done
 except for six plan highlights to edit in Admin → Plans; slice 4 has not been run on a clean VM
