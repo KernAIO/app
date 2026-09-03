@@ -136,7 +136,7 @@ services:
     depends_on: [app, core]
 
   app:
-    image: ghcr.io/kernaio/shell:${KERN_VERSION:-latest}
+    image: ${KERN_IMAGE_SHELL:-ghcr.io/kernaio/shell}:${KERN_VERSION:-latest}
     restart: unless-stopped
     environment:
       <<: *kern-env
@@ -148,7 +148,7 @@ services:
     depends_on: [core]
 
   core:
-    image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
+    image: ${KERN_IMAGE_CORE:-ghcr.io/kernaio/core}:${KERN_VERSION:-latest}
     restart: unless-stopped
     # KERN_ADMIN_EMAIL has no default on purpose. Core's bootstrap creates this address as a real
     # instance admin — a superuser-equivalent view of every workspace on the instance — on the
@@ -175,7 +175,7 @@ services:
     # them ever started. The Dockerfile probes 127.0.0.1 with `node -e fetch(...)` instead.
 
   core-worker:
-    image: ghcr.io/kernaio/core:${KERN_VERSION:-latest}
+    image: ${KERN_IMAGE_CORE:-ghcr.io/kernaio/core}:${KERN_VERSION:-latest}
     command: ["node", "dist/worker.js"]
     restart: unless-stopped
     environment: *kern-env

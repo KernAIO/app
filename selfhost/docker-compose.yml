@@ -53,7 +53,7 @@ services:
     depends_on: [app, core]
 
   app:
-    image: ghcr.io/kernaio/shell:${KERN_VERSION}
+    image: ${KERN_IMAGE_SHELL:-ghcr.io/kernaio/shell}:${KERN_VERSION}
     restart: unless-stopped
     environment:
       <<: *kern-env
@@ -65,7 +65,7 @@ services:
     depends_on: [core]
 
   core:
-    image: ghcr.io/kernaio/core:${KERN_VERSION}
+    image: ${KERN_IMAGE_CORE:-ghcr.io/kernaio/core}:${KERN_VERSION}
     restart: unless-stopped
     environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: "${KERN_ADMIN_EMAIL}", KERN_ADMIN_PASSWORD: "${KERN_ADMIN_PASSWORD}" }
     depends_on: { db-init: { condition: service_completed_successfully }, postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
@@ -77,7 +77,7 @@ services:
     # them ever started. The Dockerfile probes 127.0.0.1 with `node -e fetch(...)` instead.
 
   core-worker:
-    image: ghcr.io/kernaio/core:${KERN_VERSION}
+    image: ${KERN_IMAGE_CORE:-ghcr.io/kernaio/core}:${KERN_VERSION}
     command: ["node", "dist/worker.js"]
     restart: unless-stopped
     environment: *kern-env
