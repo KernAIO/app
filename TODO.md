@@ -68,12 +68,11 @@ takes no payment, and has no backup.
       warned the images were private; the template README promised `npm create kern-module`
       (2026-09-04). Email-to-issue was claimed in three places and is not built — corrected in
       the roadmap, the README, the docs and the website.
-- [ ] `pnpm pricing` on the website: run on 2026-09-04, it refused seven highlights the cloud's
-      plan catalogue advertises — storage "per user" on all three plans (the entitlement is a
-      workspace total), backups on Team and Business (true since 2026-09-03; the script's rule
-      still says otherwise), and support response times nobody measures. **Edit the highlights
-      in Admin → Plans**, then relax the backup rule in `website/scripts/gen-pricing.mjs`, then
-      run it again; silence means clean.
+- [x] `pnpm pricing` on the website is clean (2026-09-04). It had refused seven highlights —
+      storage "per user", backups "kept a year", support response times — and Admin → Plans had
+      no field to fix them with and wiped them on every save (`module-billing` 0.5.1 adds the
+      field). The six were corrected through the admin API; the backup rule in
+      `gen-pricing.mjs` now refuses only what outruns the 30 nightly copies that exist.
 - [x] The website's home page copy names the modules that exist and no others; Inventory joined
       the module list (2026-09-04).
 
