@@ -27,6 +27,8 @@ SNAP=""
 WANT_VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    # The usage is the comment at the top of this file; print it rather than keep a second copy.
+    -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --database) RESTORE_DB=true ;;
     --version) shift; [ $# -gt 0 ] || fail "--version needs a version, e.g. --version 1.2.0"; WANT_VERSION="$1" ;;
     --version=*) WANT_VERSION="${1#--version=}" ;;
