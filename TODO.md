@@ -24,30 +24,32 @@ takes no payment, and has no backup.
 - [ ] **Outbound mail.** Set `SMTP_URL` (or a Mailgun/Postmark/SES/Resend relay) on the Coolify app
       and the `mail` service; sign up with a fresh address and receive the verification mail;
       invite somebody and receive the invitation; request a magic link and receive it. No email
-      has ever left the instance.
-- [ ] **Backups off the host.** Nightly `pg_dump` + MinIO/object-storage mirror to Hetzner S3
-      (credentials in `~/.claude/kern-devops/infrastructure.md`), 30-day retention, a systemd
-      timer on the host — the same shape as `selfhost/kern-backup.sh`.
-- [ ] **Restore drill.** Restore last night's dump into a scratch database on the host, count a
-      few tables against production, write the procedure into
-      `docs/self-hosting/backups.md` as it was actually run.
-- [ ] **Somebody is told when it breaks.** An external HTTP probe on `/api/health` (any uptime
-      service, or a cron on a second machine) that emails/pings on failure; a `failure()`
-      notification step in `release.yml` and `rollout.yml`; a daily job that compares the cloud
-      version with the feed and shouts when they differ for more than 30 minutes.
+      has ever left the instance. **Blocked on a relay credential** (2026-09-04): no Mailgun or
+      Postmark account exists anywhere; buying one is the owner's call.
+- [x] **Backups off the host.** `kern-cloud-backup.timer` at 01:00 UTC: `pg_dump` plus a mirror of
+      the `kernaio` bucket into a versioned `kernaio-backups` bucket on Hetzner, 30-day retention
+      (2026-09-03).
+- [x] **Restore drill.** Last night's dump restored into a scratch database on the host, 150
+      tables matched against production (2026-09-03). The procedure still has to be written into
+      `docs/self-hosting/backups.md` as it was run.
+- [x] **Somebody is told when it breaks.** The `kern-watch` Cloudflare Worker probes `/api/health`
+      every five minutes and mails the owner on down, recovery and version change, and when the
+      backup heartbeat is older than 26 h (2026-09-03). `release.yml` and `rollout.yml` open an
+      issue labelled `release-failure` when they end red (2026-09-04).
 - [ ] **Stripe live.** Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the webhook endpoint in
       Stripe; set `KERN_DEFAULT_PLAN_SLUG`; buy Team with a real card in test mode and then live;
-      see the invoice; hit the seat limit and be refused; cancel; see the suspension path
-      (`repos/shell/tests/e2e/billing-suspended.spec.ts`, uncommitted, is the test to land).
+      see the invoice; hit the seat limit and be refused; cancel; see the suspension path.
+      `billing-suspended.spec.ts` landed and the webhook route ships in `module-billing` 0.5.0
+      (2026-09-04). **Blocked on the Stripe keys**, which only the account owner can mint.
 - [ ] **Entitlements enforced.** For every line in the pricing comparison table — seats, storage,
       SSO, audit retention — find the one place in `core` that checks it and prove it refuses.
       Storage is a workspace total, never per seat.
 - [ ] **Legal.** Read `/privacy`, `/terms`, `/subprocessors` once, carefully, against what
-      actually runs (Hetzner Nuremberg, Mailgun, Stripe); decide whether Kern Cloud offers a DPA;
-      make hello@, support@, security@, privacy@ and sales@ deliver somewhere a person reads.
-- [ ] **Host hygiene.** `PasswordAuthentication no` in sshd on 128.140.5.236 (key auth is what
-      the rollout uses); set `KERN_CLOUD_PG_CONTAINER` as a repository variable so the rollout
-      never has to guess the Postgres container.
+      actually runs (Hetzner Nuremberg, Mailgun, Stripe); decide whether Kern Cloud offers a DPA.
+      The five mailboxes forward to the owner through Cloudflare Email Routing (2026-09-03).
+- [x] **Host hygiene.** `PasswordAuthentication no` in sshd on 128.140.5.236 (2026-09-03).
+      `KERN_CLOUD_PG_CONTAINER` stays unset on purpose: Coolify renames every container on each
+      rollout, so `rollout.yml` finds Postgres by its compose label instead.
 - [ ] **Cloud on a firmer deploy.** Decide: keep Coolify (each rollout recreates every container,
       ~40 s of nothing serving) or move app.kernaio.com onto the `selfhost/` shape with
       `kern-upgrade.sh` and the timer. Either is fine for v1.0; write the decision into ADR 0002.
@@ -59,13 +61,21 @@ takes no payment, and has no backup.
 - [x] Website: Quire and HR are shipped; the tracker's list names what it does today
       (2026-09-02).
 - [x] Website launch checklist: the images are public (2026-09-02).
-- [ ] Docs sidebar: move the five planned pages under a *Planned* group, or keep them under
-      *Modules* with the notice — decide, and make `modules/docs-drive.md` match.
-- [ ] Every repository README agrees with the roadmap (`app`, `shell`, `core`, the seven modules,
-      `module-template`, `kernel`, `docs`). `HR` and `Inventory` are shipped, not "beyond scope".
-- [ ] `pnpm pricing` on the website imports a clean plan catalogue from app.kernaio.com — run it
-      and read the output; silence means clean.
-- [ ] The website's home page copy names the modules that exist and no others.
+- [x] Docs sidebar: the five planned pages and Drive & Calendar sit under a collapsed *Planned
+      modules* group; Tracker, Chat, HR and Mail describe what ships and name what does not;
+      Inventory has a page (2026-09-04).
+- [x] Every repository README agrees with the roadmap. `app`'s table called HR "not built" and
+      warned the images were private; the template README promised `npm create kern-module`
+      (2026-09-04). Email-to-issue was claimed in three places and is not built — corrected in
+      the roadmap, the README, the docs and the website.
+- [ ] `pnpm pricing` on the website: run on 2026-09-04, it refused seven highlights the cloud's
+      plan catalogue advertises — storage "per user" on all three plans (the entitlement is a
+      workspace total), backups on Team and Business (true since 2026-09-03; the script's rule
+      still says otherwise), and support response times nobody measures. **Edit the highlights
+      in Admin → Plans**, then relax the backup rule in `website/scripts/gen-pricing.mjs`, then
+      run it again; silence means clean.
+- [x] The website's home page copy names the modules that exist and no others; Inventory joined
+      the module list (2026-09-04).
 
 ## 3. A self-hoster gets from zero to upgraded and back — by 2026-09-11 ([#3](https://github.com/KernAIO/app/issues/3))
 
@@ -92,28 +102,39 @@ every failure is a product bug and gets a CI test where one is possible.
 Today a third-party module needs a line in `repos/shell/src/lib/modules/registry.ts` and a line
 in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes it a build.
 
-- [ ] `shell` Dockerfile: a `KERN_EXTRA_MODULES="@acme/module-crm@1.2.0 …"` build argument that
-      installs the packages and generates the `registerModule` lines.
-- [ ] `core` Dockerfile: the same argument, generating `featureModules`.
-- [ ] `selfhost/`: a documented way to build the two images with extra modules and pin them in
-      `.env` (`KERN_IMAGE_SHELL`, `KERN_IMAGE_CORE` or similar), and the drift check covering it.
-- [ ] `docs/developers/module-development.md` rewritten as a procedure: degit the template → run
-      tests → run it inside a local Kern (`pnpm dev`) → see the screens → build the images → run
-      them on a self-host. Followed end to end by an agent with no other context; every gap fixed.
+- [x] `shell` Dockerfile: `KERN_EXTRA_MODULES` installs the packages and
+      `scripts/extra-modules.mjs` rewrites `src/lib/modules/extra.ts`; verified by building the
+      image with `@kernhq/module-template@0.2.9` (2026-09-04).
+- [x] `core` Dockerfile: the same argument, rewriting `src/extra-modules.ts`; the built image
+      lists `template` among its modules (2026-09-04).
+- [x] `selfhost/`: `KERN_IMAGE_SHELL` and `KERN_IMAGE_CORE` in all three stacks and
+      `.env.example`; the drift check passes (2026-09-04).
+- [x] `docs/developers/module-development.md` rewritten as a procedure (2026-09-04). Step 3 —
+      the module linked into a local Kern through the same generator — was run against the
+      template in both hosts. **Not yet** followed end to end by an agent with no other context.
 - [ ] `npx degit KernAIO/module-template` produces a module whose `pnpm test` passes on a clean
       machine with no umbrella around it.
-- [ ] Decide `pnpm new-module` vs `npm create kern-module`; the README says one thing.
-- [ ] `@kernhq/module-template` and `@kernhq/workflow` are installable from npm without a token.
+- [x] `npx degit KernAIO/module-template` is the one way; the README no longer promises
+      `npm create kern-module` (2026-09-04).
+- [x] `@kernhq/module-template` 0.2.9 and `@kernhq/workflow` 0.1.1 resolve from the public
+      registry with no token (2026-09-04).
 
 ## 5. It is safe to sell — by 2026-09-16 ([#5](https://github.com/KernAIO/app/issues/5))
 
-- [ ] `@kernhq/testing`'s permission matrix runs in every first-party module (it runs in the
-      tracker; copy the pattern).
-- [ ] Every module carries an isolation test like
-      `repos/module-tracker/src/server/isolation.test.ts` — two cross-tenant leaks in the tracker
-      and two in core shipped before those tests existed.
-- [ ] Rate limits and security headers checked from outside (`curl -I` on the cloud; a small
-      script in `scripts/`), and CSP/frame-ancestors verified in the Caddyfile.
+- [x] `@kernhq/testing`'s permission matrix runs in every first-party module and in the template
+      (2026-09-04).
+- [x] Every module carries an isolation test (2026-09-04: chat, quire, mail and billing joined
+      tracker, hr and inventory). Doing it found that **`mod_mail` had no row-level security at
+      all** and that chat's and mail's migration folders were not replay-safe; all three are
+      fixed and guarded. Still deliberately unsecured, each with its reason in the module's test:
+      billing's `subscriptions`, `overrides` and `workspace_usage` (instance records the
+      entitlement resolver reads outside any workspace), tracker's `intake_tokens` and
+      `workspaces` (looked up by a stranger's token and by the scheduler), and in core `files`,
+      `invitations`, `mcp_codes`, `mcp_consents` and `mcp_tokens` — those five have explicit
+      filters everywhere and are the next thing to put behind a policy.
+- [x] Rate limits and security headers checked from outside: `scripts/check-edge.sh`
+      (2026-09-04). It found the shell sent no HSTS — Caddy now adds it; the cloud gets it at the
+      next rollout.
 - [ ] `repos/shell/tests/e2e/ux.spec.ts` green on every route in all four renderings, and the
       route list complete.
 - [ ] Open findings from the interface and service audits (`.audit/` in this checkout) closed or
@@ -124,15 +145,15 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
 
 ## Release machinery follow-ups (small, any day)
 
-- [ ] A `failure()` notification on `release.yml` and `rollout.yml` (also in slice 1).
+- [x] A `failure()` notification on `release.yml` and `rollout.yml` (2026-09-04).
 - [ ] A module's `!`/`BREAKING CHANGE` changeset should mark the platform feed `breaking`
       rather than defaulting to `additive`; today only a person re-signing does that.
-- [ ] `docs/developers/releases-and-migrations.md`: a short "when the nightly is red" runbook —
-      read the run, republish the module it names, dispatch again.
+- [x] `docs/developers/releases-and-migrations.md`: *When the nightly is red* (2026-09-04).
 - [ ] Renovate: fix its onboarding or remove `renovate.json` from every repository; it has never
       opened a pull request.
-- [ ] `repos/shell`'s 19 uncommitted files and `module-tracker`'s client change: whoever owns
-      them lands them; if nobody does by 2026-09-04, revert.
+- [x] `repos/shell`'s 19 uncommitted files landed as the billing-suspension toast;
+      `module-tracker`'s and `module-chat`'s client changes were widget strings looked up under
+      the wrong prefix, landed as patches (2026-09-04).
 
 ## After v1.0
 

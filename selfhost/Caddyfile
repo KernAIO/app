@@ -63,6 +63,8 @@
 		# X-Frame-Options is the same rule for anything that predates CSP.
 		Content-Security-Policy "frame-ancestors 'none'"
 		X-Frame-Options DENY
+		# Core sends its own on /api; the shell's HTML is served by Caddy, so Caddy has to say it.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 }

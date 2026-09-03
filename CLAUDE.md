@@ -170,6 +170,35 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `module-hr`'s `src/server/journal.test.ts` is the guard, and is worth copying into any module that
   hand-edits a journal.
 - Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
+- **"Every first-party module is guarded" was true of five.** `chat` and `mail` had no
+  `migrations.test.ts` at all, and both folders threw on replay — eleven bare `CREATE TABLE`s in
+  chat, seven statements in mail — while the sentence above this one said otherwise. And `mod_mail`
+  had **no row-level security on any table**: `0001_notes.sql` argued that nullable `workspace_id`
+  and hand-written `where` clauses made it unnecessary. Both found on 2026-09-04 by writing the
+  tests rather than reading the claim. The catalogue is the only honest audit: ask `pg_class` for
+  every table in `mod_*` with a `workspace_id` column and no forced policy — on a database created
+  from nothing, because the dev database's schema was built before half the policies existed and
+  says `counters` is unsecured when the migration secures it. Each module's `migrations.test.ts`
+  asks that question now. The tables still deliberately outside a policy, with the reason, are in
+  `TODO.md` slice 5.
+- **A table that legitimately serves every workspace at once binds `'*'`, never nothing.** Chat's
+  policies admit `app.workspace_id = '*'` for the gateway's cross-workspace checks, and mail's do
+  the same for the send job, the provider webhooks and the suppression check. The alternative —
+  a policy that admits an *unbound* transaction — makes forgetting to bind a leak instead of a
+  refusal. A consumer that has to work against the module version from before the policy (the
+  `mail` service did, for one nightly) writes the sentinel locally rather than importing it.
+- **A hand-typed count in a mock manifest breaks `main` the day the reach moves the module.**
+  Shell's `mock.ts` said inventory had five permissions; the nightly reached 0.5.0, which has six,
+  and `mock-manifests.test.ts` went red on `main` with nobody having touched the file. Read counts
+  off the module contracts (`inventoryPermissions.length`); the test that pins them exists so the
+  demo does not lie, not so a literal can be maintained by hand.
+- **A third-party module is a build argument, not a fork.** `KERN_EXTRA_MODULES` on the `shell` and
+  `core` Dockerfiles installs the packages and `scripts/extra-modules.mjs` rewrites the one
+  committed file each host reads them from (`src/lib/modules/extra.ts`, `src/extra-modules.ts`);
+  both entry points of a module export it as `default`, which is what the generator imports.
+  `KERN_IMAGE_SHELL` / `KERN_IMAGE_CORE` in `.env` point a stack at the pair. Locally the same
+  generator wires a module linked under `repos/`; `core` reads its `dist/`, so build the module
+  first. Verified by building both images with `@kernhq/module-template@0.2.9` inside.
 - **A module ships its own screens, and `shell` ships only the shell.** Contract, server, pages,
   widgets, strings and manifest are one package; deleting it removes the feature completely. The
   wiring outside it is two lines — `featureModules` in a host service, `registerModule` in shell's
