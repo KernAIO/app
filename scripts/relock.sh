@@ -29,7 +29,15 @@ for name in "$@"; do
     mkdir -p "$WORK/$name/$(dirname "$f")"
     cp "$repo/$f" "$WORK/$name/$f"
   done
-  ( cd "$WORK/$name" && pnpm install --lockfile-only >/dev/null 2>&1 )
+  # Say why when it fails. This used to discard pnpm's output, so a resolve that could not find a
+  # version published five minutes ago — npm's CDN serves the abbreviated metadata stale for a
+  # while, and a cached copy of that in ~/Library/Caches/pnpm/metadata-* keeps it stale longer —
+  # printed nothing, refreshed nothing, and let the range bump be pushed without its lockfile.
+  if ! out=$(cd "$WORK/$name" && pnpm install --lockfile-only 2>&1); then
+    printf '  %s: lockfile NOT refreshed —\n%s\n' "$name" "$(printf '%s\n' "$out" | grep -vE 'Progress|^$' | tail -6)" >&2
+    echo "  (a version published minutes ago: evict ~/Library/Caches/pnpm/metadata*/registry.npmjs.org/@kernhq/<pkg>.json and retry)" >&2
+    exit 1
+  fi
   cp "$WORK/$name/pnpm-lock.yaml" "$repo/pnpm-lock.yaml"
   echo "  $name: lockfile refreshed"
 done

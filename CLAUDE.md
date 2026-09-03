@@ -272,6 +272,15 @@ The repositories are **public**, so every commit is visible the moment it is pus
   committed lockfile still agree with the manifest; and do the modules this package hosts agree with
   the framework it declares. This broke CI twice on 2026-08-25 before the check existed, and the
   check found two more the first time it ran.
+- **A version published minutes ago is invisible to `pnpm install` for a while, and `relock.sh`
+  used to say nothing about it.** npm's CDN serves the abbreviated package document pnpm fetches
+  stale after a publish (the full document at `registry.npmjs.org/@kernhq%2f<pkg>` already lists
+  the version), and pnpm caches that stale copy in `~/Library/Caches/pnpm/metadata*`. So a reach
+  right after a publish fails with `ERR_PNPM_NO_MATCHING_VERSION … latest release is <previous>`.
+  On 2026-09-04 `relock.sh` swallowed that error, printed nothing, and a range bump was pushed to
+  three services without its lockfile — CI red at install in all three. The script now fails
+  loudly; when it does, evict the cached document and retry, or wait for the nightly, which
+  reaches with fresh metadata. Never push a range bump whose relock did not print "refreshed".
 - **Taking that advice is what breaks the lockfile, so the two go in one commit.** Editing a range in
   a repository that commits a `pnpm-lock.yaml` leaves it out of date with itself, and
   `--frozen-lockfile` compares *specifiers*, not resolved versions — so the next publish dies at
