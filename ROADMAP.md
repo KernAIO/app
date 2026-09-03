@@ -36,7 +36,9 @@ Verified on 2026-09-02 by reading the registry, the routes and the release feed 
 - **HR** — directory, org chart, offices, leave, attendance, approvals, subject access and erasure.
   Onboarding checklists are the one part not built.
 - **Inventory** — the asset register: what the company owns, who holds it, purchase and warranty,
-  categories, full history.
+  categories, full history. Reachability audited 2026-09-03: every one of the 32 contract
+  procedures (assets, fields, custody, categories, repairs, attachments, stats) has a client call
+  site — nothing server-only.
 - **Billing** — plans, subscriptions, entitlements and Stripe checkout, administered from the admin
   console. Off by default on a self-hosted instance.
 - **Release and update** — a nightly release that advances every module, signs a feed, rolls the
