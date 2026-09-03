@@ -32,9 +32,12 @@ Verified on 2026-09-02 by reading the registry, the routes and the release feed 
 - **Quire** — spaces, a nested page tree, real-time collaborative editing, version history,
   comments, draft/publish, published sites addressed by path, diagrams and embeds, databases.
 - **Mail** — outbound email per workspace through SMTP, Mailgun, SES, Postmark or Resend, with
-  templates, delivery log, bounces and suppression; intake addresses that turn a reply into an issue.
+  templates, delivery log, bounces and suppression. Email-to-issue is **not** built (corrected
+  2026-09-04: `inbound_routes` is a placeholder table, `tracker.issues.createFromEmail` has no
+  caller, and the mail service receives nothing).
 - **HR** — directory, org chart, offices, legal entities and cost centres, leave, attendance,
-  approvals, subject access and erasure. Onboarding checklists are the one part not built.
+  approvals, subject access and erasure, onboarding and offboarding checklists (shipped in 0.22.0,
+  2026-09-03).
   Reachability audited 2026-09-03: of the 137 contract procedures, 129 have client call sites; the
   six that had none (entities and cost-centre writes — `payroll.export.v1` needs an employer to
   exist, so a fresh workspace could not run payroll at all) got the Entities settings screen. The
@@ -62,7 +65,7 @@ on the website as *planned*; nothing sells them.
 
 **Drive** · **Calendar** · **Recruiting** · **CRM** · **Automation** rules engine · **Calls**
 (the LiveKit profile exists in Compose; no module uses it) · **AI assistant** · **Personal mail
-inbox** (IMAP) · **Outgoing webhooks** · **HR onboarding** · cross-workspace shared channels ·
+inbox** (IMAP) · **Email-to-issue** (intake addresses) · **Outgoing webhooks** · cross-workspace shared channels ·
 Meilisearch · SCIM · GitHub/GitLab links · CalDAV/Google sync · WebDAV · whiteboards · mobile and
 desktop shells · a marketplace for community modules.
 

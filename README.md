@@ -37,10 +37,14 @@ Kern is **pre-1.0 and in active development**. This list is what actually runs, 
 | Chat — channels, direct messages, threads, reactions, presence | Working |
 | Notifications across every workspace you belong to | Working |
 | Files, search, audit log, workspace settings | Working |
-| Email the platform sends (per-workspace providers) | Working |
-| Documents several people edit at once (Quire) | Spaces and pages; editor next |
+| Email the platform sends (per-workspace providers, delivery log, bounces) | Working |
+| Documents several people edit at once (Quire) — spaces, page tree, version history, published sites | Working |
+| People (HR) — directory, org chart, leave, attendance, approvals | Working |
+| Inventory — the asset register, custody, repairs | Working |
+| Billing — plans, subscriptions, Stripe checkout (off by default when self-hosted) | Working |
+| Instance updates — a signed release feed, and an instance that upgrades itself inside a window | Working |
 | Personal mail inbox (your own IMAP account) | Not built |
-| Drive, calendar, HR, recruiting, CRM, automation, calls, AI | Not built |
+| Drive, calendar, recruiting, CRM, automation, calls, AI | Not built |
 
 Everything above is one workspace or many, in English, German, Persian or Arabic, left-to-right or
 right-to-left, in light or dark.
@@ -58,9 +62,6 @@ You need:
 
 The published images are `amd64`, so an arm64 server needs images built for it. Full table:
 [Requirements](https://docs.kernaio.com/self-hosting/install/#requirements).
-
-> **Not yet.** The container images are still private, so this installer cannot pull them. Until the
-> first release, use **[Develop Kern](#develop-kern)** below, which runs everything from source.
 
 ### 1. Run the installer
 

@@ -137,4 +137,4 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
 ## After v1.0
 
 Recruiting and CRM (both start from the workflow engine), Automation, Calendar, Drive, Calls, AI,
-the personal mail inbox, outgoing webhooks, HR onboarding — in the order a paying team asks.
+the personal mail inbox, email-to-issue, outgoing webhooks — in the order a paying team asks.
