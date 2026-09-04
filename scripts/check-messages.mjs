@@ -1,0 +1,87 @@
+/**
+ * Fail when a `t()` key is not defined anywhere.
+ *
+ *   node scripts/check-messages.mjs [moduleDir ...]     (default: the current package)
+ *
+ * `t()` returns the **key** when nothing defines it. That is deliberate — a missing string that
+ * renders as `chat.nav` is visibly broken, where an empty one is a blank space nobody reports — but
+ * it means a typo ships silently green: the build passes, the types pass, and a customer reads
+ * `tracker.common.widget_issues_title` off the screen.
+ *
+ * That happened, at 164 call sites across six modules, from one bug in `scopedT`. Nothing caught it
+ * because nothing was looking. This looks.
+ *
+ * A key resolves if it is in this module's own bundle (`src/client/i18n.ts`) or, when written
+ * `common.x`, in the framework's shared bundle.
+ */
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const dirs = process.argv.slice(2)
+if (dirs.length === 0) dirs.push(process.cwd())
+
+/** Keys the framework's `common` bundle defines. Quote style varies with the formatter. */
+function commonKeys() {
+  for (const p of [
+    join(here, '..', 'repos', 'kernel', 'packages', 'ui', 'src', 'lib', 'common-messages.ts'),
+    join(here, '..', 'node_modules', '@kernhq', 'ui', 'src', 'lib', 'common-messages.ts'),
+    join(process.cwd(), 'node_modules', '@kernhq', 'ui', 'dist', 'common-messages.js'),
+  ]) {
+    if (!existsSync(p)) continue
+    const src = readFileSync(p, 'utf8')
+    return new Set([...src.matchAll(/['"]common\.([a-z0-9_]+)['"]/g)].map((m) => m[1]))
+  }
+  return null
+}
+
+const common = commonKeys()
+if (!common) {
+  console.error('Could not find the framework common bundle — cannot check message keys.')
+  process.exit(1)
+}
+
+let failed = false
+for (const dir of dirs) {
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  const id = pkg.name.replace('@kernhq/module-', '')
+  const i18n = join(dir, 'src', 'client', 'i18n.ts')
+  if (!existsSync(i18n)) continue
+
+  const bundle = readFileSync(i18n, 'utf8')
+  const own = new Set(
+    [...bundle.matchAll(new RegExp(`['"]${id}\\.([a-z0-9_]+)['"]`, 'g'))].map((m) => m[1]),
+  )
+
+  const files = []
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (/\.(ts|svelte)$/.test(e.name) && !full.endsWith('i18n.ts')) files.push(full)
+    }
+  }
+  walk(join(dir, 'src', 'client'))
+
+  const missing = new Map()
+  for (const file of files) {
+    for (const m of readFileSync(file, 'utf8').matchAll(/\bt\(\s*['"]([a-z0-9_.]+)['"]/g)) {
+      const key = m[1]
+      const ok = key.startsWith('common.') ? common.has(key.slice(7)) : own.has(key)
+      if (!ok) missing.set(key, (missing.get(key) ?? new Set()).add(file.slice(dir.length + 1)))
+    }
+  }
+
+  if (missing.size === 0) {
+    console.log(`✓ ${pkg.name}: every t() key resolves (${own.size} own, ${common.size} shared)`)
+    continue
+  }
+  failed = true
+  console.error(`\n${pkg.name}: ${missing.size} key(s) nothing defines — these render as themselves`)
+  for (const [key, where] of [...missing].sort()) {
+    console.error(`  ${key}`)
+    for (const f of [...where].slice(0, 3)) console.error(`      ${f}`)
+  }
+}
+process.exit(failed ? 1 : 0)
