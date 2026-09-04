@@ -137,11 +137,12 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
 - [x] Rate limits and security headers checked from outside: `scripts/check-edge.sh`
       (2026-09-04). It found the shell sent no HSTS — Caddy now adds it; the cloud gets it at the
       next rollout.
-- [ ] `repos/shell/tests/e2e/ux.spec.ts` green on every route in all four renderings, and the
-      route list complete.
-- [ ] Open findings from the interface and service audits (`.audit/` in this checkout) closed or
-      written down as deferred with a reason.
-- [ ] `core-worker` reports healthy on the cloud (fix lands with the 2026-09-03 nightly — check).
+- [x] `repos/shell/tests/e2e/ux.spec.ts` green on every route in all four renderings — 326
+      checks — with the thirteen routes hr 0.23 and inventory 0.5 added (2026-09-04).
+- [x] `.audit/FINDINGS.md`: 19 of 20 closed before today; #12 (the UX guard's route coverage)
+      closed with the sweep above (2026-09-04).
+- [x] `core-worker` reports healthy on the cloud — every container `(healthy)`, worker log clean
+      for 24 h (verified 2026-09-03).
 - [ ] Cut **v1.0.0** by hand: `gh workflow run release.yml --repo KernAIO/app --field bump=major`;
       then re-sign its feed with `schemaChanges` and `minPreviousVersion` set deliberately.
 
