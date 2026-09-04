@@ -26,6 +26,14 @@ takes no payment, and has no backup.
       invite somebody and receive the invitation; request a magic link and receive it. No email
       has ever left the instance. **Blocked on a relay credential** (2026-09-04): no Mailgun or
       Postmark account exists anywhere; buying one is the owner's call.
+- [x] **Every cloud workspace is on a plan.** `kernaio` and `entropol` were created before
+      `KERN_DEFAULT_PLAN_SLUG` existed, had no subscription row, and a workspace with no row is
+      *unlimited* — so two of the three cloud workspaces were entitled to everything with no trial
+      and no bill, for ever (found 2026-09-04 while chasing the "missing" invoice, which was on
+      `dinalabs` all along). `module-billing` 0.5.14's nightly job enrols any workspace with no row
+      on the default plan; both start their 14-day trial the first night it runs. A webhook for a
+      workspace the instance does not have is skipped since 0.5.13 (the shared sandbox delivered a
+      dev checkout to the cloud); the one orphan invoice row is deleted by hand.
 - [x] **Backups off the host.** `kern-cloud-backup.timer` at 01:00 UTC: `pg_dump` plus a mirror of
       the `kernaio` bucket into a versioned `kernaio-backups` bucket on Hetzner, 30-day retention
       (2026-09-03).
