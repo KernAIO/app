@@ -36,14 +36,24 @@ takes no payment, and has no backup.
       every five minutes and mails the owner on down, recovery and version change, and when the
       backup heartbeat is older than 26 h (2026-09-03). `release.yml` and `rollout.yml` open an
       issue labelled `release-failure` when they end red (2026-09-04).
-- [ ] **Stripe live.** Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the webhook endpoint in
-      Stripe; set `KERN_DEFAULT_PLAN_SLUG`; buy Team with a real card in test mode and then live;
-      see the invoice; hit the seat limit and be refused; cancel; see the suspension path.
-      `billing-suspended.spec.ts` landed and the webhook route ships in `module-billing` 0.5.0
-      (2026-09-04). **Blocked on the Stripe keys**, which only the account owner can mint.
-- [ ] **Entitlements enforced.** For every line in the pricing comparison table — seats, storage,
-      SSO, audit retention — find the one place in `core` that checks it and prove it refuses.
-      Storage is a workspace total, never per seat.
+- [x] **Stripe, sandbox.** Decided 2026-09-04: v1.0 launches with the Stripe *sandbox* (the "ij
+      sandbox" account the CLI is logged into; `sk_test` valid to 2026-11-02), live keys follow.
+      Driven end to end against real Stripe with the Team and Business prices created there:
+      hosted Checkout with the 4242 card → 12 webhooks → active on Team, invoice paid and
+      mirrored; reprice Team ↔ Business in place; portal URL; admin suspend → every write refused
+      with `billing.subscription.inactive`, reads still answer; cancel-at-period-end mirrored both
+      ways; a failing card → `invoice.payment_failed` → `past_due` with a 14-day grace clock;
+      the customer's fixed card paying the open invoice → active, clock cleared. Cloud endpoint
+      `we_1UBvZWRxQj7Rxe4EL4l2SRY6`. Still to do in sandbox: grace expiry → suspended by the
+      hourly job, full cancel → reactivate, and the same purchase on app.kernaio.com once its
+      keys are set.
+- [x] **Entitlements enforced** (2026-09-04, sandbox drill): seats — the 11th acceptance on a
+      10-seat plan refused with `billing.seats.limit_reached` (a single invitation is checked
+      against members + that batch, acceptance against the live count); storage — an upload over
+      the workspace total refused with `billing.storage.limit_reached`, one under it accepted;
+      SSO — refused on a plan without it (`BILLING_SSO_NOT_INCLUDED`), and on a plan with it the
+      registration itself answers 500 (KernAIO/core#1), so SSO is *not in v1.0*; audit retention
+      — one nightly job (`retention.ts`), unchanged.
 - [ ] **Legal.** Read `/privacy`, `/terms`, `/subprocessors` once, carefully, against what
       actually runs (Hetzner Nuremberg, Mailgun, Stripe); decide whether Kern Cloud offers a DPA.
       The five mailboxes forward to the owner through Cloudflare Email Routing (2026-09-03).

@@ -16,7 +16,7 @@ module ships when every capability its server offers is reachable from the inter
 Verified on 2026-09-02 by reading the registry, the routes and the release feed — not the plan.
 
 - **Platform** — accounts with password, magic link, Google/GitHub/Microsoft sign-in, two-factor,
-  passkeys, SSO (OIDC/SAML, entitlement-gated), API keys. Many workspaces per instance; members,
+  passkeys, API keys. Many workspaces per instance; members,
   built-in and custom roles, groups, per-object permission bindings. One notification inbox across
   workspaces. Files, cross-module search, the audit log, per-workspace module and capability
   switches, data export and account erasure. Instance admin console: users, workspaces, modules,
@@ -69,7 +69,9 @@ on the website as *planned*; nothing sells them.
 
 **Drive** · **Calendar** · **Recruiting** · **CRM** · **Automation** rules engine · **Calls**
 (the LiveKit profile exists in Compose; no module uses it) · **AI assistant** · **Personal mail
-inbox** (IMAP) · **Email-to-issue** (intake addresses) · **Outgoing webhooks** · cross-workspace shared channels ·
+inbox** (IMAP) · **Email-to-issue** (intake addresses) · **SSO** (OIDC/SAML — the entitlement is
+gated, but registering a provider answers 500 and has no screen; [core#1](https://github.com/KernAIO/core/issues/1),
+found 2026-09-04) · **Outgoing webhooks** · cross-workspace shared channels ·
 Meilisearch · SCIM · GitHub/GitLab links · CalDAV/Google sync · WebDAV · whiteboards · mobile and
 desktop shells · a marketplace for community modules.
 
