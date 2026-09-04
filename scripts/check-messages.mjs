@@ -46,10 +46,13 @@ let failed = false
 for (const dir of dirs) {
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
   const id = pkg.name.replace('@kernhq/module-', '')
-  const i18n = join(dir, 'src', 'client', 'i18n.ts')
-  if (!existsSync(i18n)) continue
+  // A module keeps its strings in `i18n.ts`, or in `messages.ts` with `i18n.ts` as the wrapper —
+  // hr and inventory do the latter, and reading only the first reported 1,897 keys "nothing
+  // defines" in a module whose every screen was fine.
+  const bundles = ['i18n.ts', 'messages.ts'].map((f) => join(dir, 'src', 'client', f)).filter(existsSync)
+  if (bundles.length === 0) continue
 
-  const bundle = readFileSync(i18n, 'utf8')
+  const bundle = bundles.map((p) => readFileSync(p, 'utf8')).join('\n')
   const own = new Set(
     [...bundle.matchAll(new RegExp(`['"]${id}\\.([a-z0-9_]+)['"]`, 'g'))].map((m) => m[1]),
   )
@@ -59,7 +62,7 @@ for (const dir of dirs) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const full = join(d, e.name)
       if (e.isDirectory()) walk(full)
-      else if (/\.(ts|svelte)$/.test(e.name) && !full.endsWith('i18n.ts')) files.push(full)
+      else if (/\.(ts|svelte)$/.test(e.name) && !bundles.includes(full)) files.push(full)
     }
   }
   walk(join(dir, 'src', 'client'))
