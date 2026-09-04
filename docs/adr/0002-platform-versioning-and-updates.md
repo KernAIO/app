@@ -121,6 +121,28 @@ A release is only visible once its feed is attached: `release.yml` creates it as
 `release-feed.yml` publishes it after `releases.json` is uploaded, so `releases/latest` never points
 at a version an instance cannot read.
 
+## Addendum (2026-09-04): Kern Cloud stays on Coolify through v1.0
+
+The question was whether to move app.kernaio.com onto the `selfhost/` shape — `kern-upgrade.sh`
+and its timer — before v1.0, so the cloud upgrades exactly the way a self-hosted instance does and
+so a rollout no longer recreates every container (about 40 seconds during which nothing serves).
+
+Decided: **stay on Coolify** for v1.0, and revisit after.
+
+- The rollout that exists is the one that has been exercised: migration dry run, snapshot,
+  maintenance mode, `/api/health` gate, automatic rollback, and now backups and an uptime watch
+  around it. Moving the cloud in the last week would put an untested path in front of the first
+  paying customers to save 40 seconds a night.
+- The 40-second gap is inside the maintenance window the rollout already declares, and the watch
+  treats two consecutive failures — ten minutes — as *down*, so a rollout never pages anyone.
+- What the move would buy — one upgrade path for cloud and self-host — is real, and the self-host
+  path is the one a stranger's install proves, not the cloud's. Reopen this once the clean-VM drill
+  has run green twice (TODO slice 4) and the nightly has moved the cloud for a month without a hand.
+
+Two consequences already followed from staying: `rollout.yml` finds Postgres by compose label
+because Coolify renames every container on each deploy, and `KERN_CLOUD_PG_CONTAINER` must not be
+set.
+
 ## Consequences
 
 - `installed_version` becomes meaningful only once something writes it from the migration path; it
