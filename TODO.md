@@ -92,6 +92,20 @@ takes no payment, and has no backup.
       `gen-pricing.mjs` now refuses only what outruns the 30 nightly copies that exist.
 - [x] The website's home page copy names the modules that exist and no others; Inventory joined
       the module list (2026-09-04).
+- [x] Every one of the 67 routes screenshotted from the mock build and judged as a UI review
+      (2026-09-04). Fixed: the first invoice of every subscription was lost (`invoice.paid`
+      arrives before `checkout.session.completed`, `module-billing` 0.5.9 places it by the
+      subscription metadata Stripe snapshots on the invoice and backfills nightly); the invoice
+      list had no status column; the admin subscriptions table was wider than its pane; the HR
+      reports page had a 160px blank band (a `.ctl` class shared with `Field`'s inner wrapper)
+      and a clipped last column; an overnight shift printed two full dates; tracker Import used
+      the browser's bare file input; Integrations called Email delivery "Coming soon" beside a
+      mail settings page that exists; two icon buttons had no gap. Still open, all small:
+      Integrations lists Webhooks and API tokens as coming soon (true — say so in the docs
+      rather than build them before 1.0); Work that repeats shows the interval as "week" rather
+      than "every week"; Quire's database view prints "Empty" in every empty cell, which reads
+      as noise on a sparse table; the tracker Workflows list has an empty band under the one
+      workflow. None blocks 1.0.
 
 ## 3. A self-hoster gets from zero to upgraded and back — by 2026-09-11 ([#3](https://github.com/KernAIO/app/issues/3))
 

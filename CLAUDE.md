@@ -218,6 +218,21 @@ The repositories are **public**, so every commit is visible the moment it is pus
   button on the next render, and two quick clicks are one render apart — so a double-click on
   *clock in* files two punches, and on an approval files two decisions. Set a plain `$state` flag in
   the same tick as the click, guard on it before calling `mutate`, and clear it in `onSettled`.
+- **A page's class name can land on a component's inner element, and a `flex-basis` becomes a
+  height.** `ReportsPage` styled its filters with `.controls :global(.ctl) { flex: 0 1 160px }`,
+  and `Field` names its own control wrapper `.ctl` — a column — so every filter was 160px tall and
+  a blank band sat between the filters and the report. Nothing fails: it is a valid layout. Name
+  page-level classes for the page (`.filter`), and when a screenshot shows empty space, measure the
+  element's children rather than reading the CSS.
+- **Stripe sends `invoice.paid` for a new subscription's first invoice *before*
+  `checkout.session.completed`.** Anything that finds the workspace through the subscription row
+  will not find it yet, and a handler that returns quietly there records the event as applied — so
+  Stripe never retries and the invoice is gone. The cloud's first purchase lost its invoice this way.
+  The invoice carries `parent.subscription_details.metadata` (a snapshot of the subscription's
+  metadata, `kern_workspace_id` included); read that first, and never answer 2xx to an event you
+  did not apply. `Intl.DateTimeFormat.formatRange` is the other trap of the day: given two instants
+  on different days it prints both dates in full even when asked only for hours, which is how an
+  overnight shift read "1/1/2024, 10:00 PM – 1/2/2024, 6:00 AM".
 - **Disabling the control somebody is standing on throws their focus to `<body>`.** The browser
   blurs a focused element the moment it becomes disabled and hands focus nowhere; nothing gives it
   back, so a keyboard user who toggles a switch loses their place on the page and has to tab from
