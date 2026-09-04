@@ -44,9 +44,11 @@ takes no payment, and has no backup.
       with `billing.subscription.inactive`, reads still answer; cancel-at-period-end mirrored both
       ways; a failing card → `invoice.payment_failed` → `past_due` with a 14-day grace clock;
       the customer's fixed card paying the open invoice → active, clock cleared. Cloud endpoint
-      `we_1UBvZWRxQj7Rxe4EL4l2SRY6`. Still to do in sandbox: grace expiry → suspended by the
-      hourly job, full cancel → reactivate, and the same purchase on app.kernaio.com once its
-      keys are set.
+      `we_1UBvZWRxQj7Rxe4EL4l2SRY6`. **The cloud too** (2026-09-04 11:56 UTC): sandbox keys set
+      on Coolify, Team chosen from app.kernaio.com's own billing screen, hosted Checkout with the
+      test card, the webhook delivered to the cloud — *Payment received*, Team, trialing until
+      2026-09-18, Stripe ids stored. Still to do in sandbox: grace expiry → suspended by the
+      hourly job, full cancel → reactivate.
 - [x] **Entitlements enforced** (2026-09-04, sandbox drill): seats — the 11th acceptance on a
       10-seat plan refused with `billing.seats.limit_reached` (a single invitation is checked
       against members + that batch, acceptance against the live count); storage — an upload over
