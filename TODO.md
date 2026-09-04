@@ -198,11 +198,11 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
       literal `additive` (2026-09-04). First exercised by whichever release next breaks something.
 - [x] `docs/developers/releases-and-migrations.md`: *When the nightly is red* (2026-09-04).
 - [ ] Renovate: fix its onboarding or remove `renovate.json` from every repository; it has never
-      opened a pull request. Checked 2026-09-04: the app is installed on every repository, all 16
-      carry the config, and there is not one Renovate PR or dependency dashboard anywhere — so it
-      is not running at all, which only the Mend dashboard (app.renovatebot.com, owner login) can
-      say why. Not a launch item: the reach moves the `@kernhq/*` pins, and nothing depends on
-      Renovate.
+      opened a pull request. Solved 2026-09-04 from the Mend dashboard: Renovate *is* running —
+      every repository is onboarded and jobs run hourly — but the org's engine setting
+      "Dependency Updates (Renovate)" is **Silent**, which scans and opens nothing. Owner switches
+      it to Interactive (developer.mend.io → KernAIO → Settings); the dashboards and Monday PRs
+      follow by themselves. Not a launch item: the reach moves the `@kernhq/*` pins.
 - [x] `repos/shell`'s 19 uncommitted files landed as the billing-suspension toast;
       `module-tracker`'s and `module-chat`'s client changes were widget strings looked up under
       the wrong prefix, landed as patches (2026-09-04).
