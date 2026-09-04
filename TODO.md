@@ -93,10 +93,13 @@ takes no payment, and has no backup.
 - [x] The website's home page copy names the modules that exist and no others; Inventory joined
       the module list (2026-09-04).
 - [x] Every one of the 67 routes screenshotted from the mock build and judged as a UI review
-      (2026-09-04). Fixed: the first invoice of every subscription was lost (`invoice.paid`
-      arrives before `checkout.session.completed`, `module-billing` 0.5.9 places it by the
-      subscription metadata Stripe snapshots on the invoice and backfills nightly); the invoice
-      list had no status column; the admin subscriptions table was wider than its pane; the HR
+      (2026-09-04). Fixed: an invoice whose customer no subscription row knew yet was dropped as
+      applied (`invoice.paid` arrives before `checkout.session.completed`; `module-billing` 0.5.9
+      places it by the subscription metadata Stripe snapshots on the invoice and backfills
+      nightly — the cloud's own purchase turned out *not* to have hit this, its row was there);
+      a webhook for a workspace this instance does not have wrote an orphan invoice row with a 200
+      (a dev checkout through the shared sandbox — guarded now, the orphan `J9ZNFK5L-0003` row on
+      the cloud is still to delete by hand); the invoice list had no status column; the admin subscriptions table was wider than its pane; the HR
       reports page had a 160px blank band (a `.ctl` class shared with `Field`'s inner wrapper)
       and a clipped last column; an overnight shift printed two full dates; tracker Import used
       the browser's bare file input; Integrations called Email delivery "Coming soon" beside a

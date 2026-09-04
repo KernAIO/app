@@ -225,12 +225,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   page-level classes for the page (`.filter`), and when a screenshot shows empty space, measure the
   element's children rather than reading the CSS.
 - **Stripe sends `invoice.paid` for a new subscription's first invoice *before*
-  `checkout.session.completed`.** Anything that finds the workspace through the subscription row
-  will not find it yet, and a handler that returns quietly there records the event as applied — so
-  Stripe never retries and the invoice is gone. The cloud's first purchase lost its invoice this way.
-  The invoice carries `parent.subscription_details.metadata` (a snapshot of the subscription's
-  metadata, `kern_workspace_id` included); read that first, and never answer 2xx to an event you
-  did not apply. `Intl.DateTimeFormat.formatRange` is the other trap of the day: given two instants
+  `checkout.session.completed`.** A checkout started here writes the Stripe customer onto the
+  subscription row before Checkout opens, so a customer lookup holds on the normal path — the
+  cloud's first purchase was diagnosed as having lost its invoice on this theory and had not; the
+  row was there, 7 ms after the event. Read the cloud's tables before naming a cause. The order
+  still matters for a subscription made in the Stripe dashboard or an instance whose row is behind:
+  the invoice carries `parent.subscription_details.metadata` (`kern_workspace_id` included), so
+  read that first, and never answer 2xx to an event you did not apply. And one Stripe sandbox
+  delivers every event to every endpoint on the account — a dev-machine checkout wrote an invoice
+  for a workspace the cloud does not have, with a 200 and no log line, because nothing checked the
+  workspace existed. `Intl.DateTimeFormat.formatRange` is the other trap of the day: given two instants
   on different days it prints both dates in full even when asked only for hours, which is how an
   overnight shift read "1/1/2024, 10:00 PM – 1/2/2024, 6:00 AM".
 - **Disabling the control somebody is standing on throws their focus to `<body>`.** The browser
