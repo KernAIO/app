@@ -379,6 +379,17 @@ comments and commit messages keep the voice they have; user-facing strings belon
   twice and typed into row 2. Focus the root element first — `documentElement`, `tabindex="-1"`,
   focus, remove the attribute — before every walk. Any browser test that tabs more than once per
   page has this and will not know it.
+- **Tailwind never scanned the module packages, so a module screen only had the utilities the
+  shell happened to use too.** Tailwind v4's automatic source detection skips `node_modules`, and
+  that is where every `@kernhq/module-*/src/client` lives — linked or installed. `p-5`,
+  `content-between`, a two-column `grid-cols-2`: generated only if some file under `shell/src`
+  used the same class, otherwise silently absent. The billing page had stacked its plan cards
+  full-width, doubled its padding and lost the gap above its button for as long as it existed,
+  and the UX sweep cannot see a missing class. `@source "../node_modules/@kernhq/module-*/src/client"`
+  in `shell/src/app.css` fixed it on 2026-09-04 — and changed the look of every module screen at
+  once, which is why the sweep ran before it shipped. Measure a computed style when a class seems
+  to do nothing (`getComputedStyle(el).padding`), and remember `Card`'s own scoped `.p-md` beats
+  a `p-4` passed in: use `padding="none"` and pad inside.
 - **A screenshot taken for any reason is a UI review.** During the Stripe drill on 2026-09-04 the
   plan screen was captured three times to read the subscription state, and the picture also showed
   a *Choose* button flush against the highlight list with the card's padding pooled beneath it —
