@@ -54,15 +54,17 @@ takes no payment, and has no backup.
       SSO — refused on a plan without it (`BILLING_SSO_NOT_INCLUDED`), and on a plan with it the
       registration itself answers 500 (KernAIO/core#1), so SSO is *not in v1.0*; audit retention
       — one nightly job (`retention.ts`), unchanged.
-- [ ] **Legal.** Read `/privacy`, `/terms`, `/subprocessors` once, carefully, against what
-      actually runs (Hetzner Nuremberg, Mailgun, Stripe); decide whether Kern Cloud offers a DPA.
-      The five mailboxes forward to the owner through Cloudflare Email Routing (2026-09-03).
+- [x] **Legal.** Read against what runs (2026-09-04): both pages said no backups were taken —
+      corrected to nightly, 30 days, off-host, and that a deletion survives in them that long;
+      Cloudflare added as the fourth subprocessor (every request and every mail to our own
+      addresses passes through it). DPA: none for v1.0, and the subprocessors page says so plainly
+      — a company that needs one writes to privacy@. The five mailboxes forward to the owner
+      (2026-09-03).
 - [x] **Host hygiene.** `PasswordAuthentication no` in sshd on 128.140.5.236 (2026-09-03).
       `KERN_CLOUD_PG_CONTAINER` stays unset on purpose: Coolify renames every container on each
       rollout, so `rollout.yml` finds Postgres by its compose label instead.
-- [ ] **Cloud on a firmer deploy.** Decide: keep Coolify (each rollout recreates every container,
-      ~40 s of nothing serving) or move app.kernaio.com onto the `selfhost/` shape with
-      `kern-upgrade.sh` and the timer. Either is fine for v1.0; write the decision into ADR 0002.
+- [x] **Cloud on a firmer deploy.** Decided 2026-09-04: Coolify stays through v1.0; the reasons and
+      the condition for reopening it are an addendum to ADR 0002.
 
 ## 2. Every page says only what ships — by 2026-09-05 ([#2](https://github.com/KernAIO/app/issues/2))
 
