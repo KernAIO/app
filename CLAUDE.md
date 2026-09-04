@@ -379,6 +379,12 @@ comments and commit messages keep the voice they have; user-facing strings belon
   twice and typed into row 2. Focus the root element first — `documentElement`, `tabindex="-1"`,
   focus, remove the attribute — before every walk. Any browser test that tabs more than once per
   page has this and will not know it.
+- **A screenshot taken for any reason is a UI review.** During the Stripe drill on 2026-09-04 the
+  plan screen was captured three times to read the subscription state, and the picture also showed
+  a *Choose* button flush against the highlight list with the card's padding pooled beneath it —
+  `Card` is a block, so `grid gap-4` on it reached nothing. The owner saw it from the same image.
+  Whenever you look at a rendered screen, judge spacing, alignment, direction and copy before you
+  read the data off it, and fix what you see in the same session (`kern-ui` §13).
 - **Two of these defects are invisible from the source, so measure rather than eyeball.** A colour
   pair's contrast is arithmetic, not taste: compute it against the surface the text actually sits on
   and against the *palest* one it could sit on. And `opacity` on a row fades its text against the

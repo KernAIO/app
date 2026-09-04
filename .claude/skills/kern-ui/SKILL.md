@@ -210,3 +210,14 @@ look at it in both themes — with screenshots if Chrome tooling is available. T
 `pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e`.
 
 State plainly in your report what you exercised and what you did not.
+
+**A screenshot is a review, not a receipt.** Every time you capture a screen — during a drill, a
+smoke test, a payment flow, anything — look at it as a designer before you read it as a tester:
+spacing between blocks (a button flush against a list is a defect), the card's padding pooling on
+one side, text direction under RTL, a badge or a number that overflows, a banner whose words are
+untrue for the state it describes. On 2026-09-04 a billing screen was screenshotted three times
+while proving Stripe worked and nobody noticed the *Choose* button had no gap above it and the
+card's padding sat underneath it; the owner did, from the same picture. What the machine sweep
+(`ux.spec.ts`) cannot judge — rhythm, gaps, alignment, copy — is yours to judge in that moment, and
+a defect seen and not fixed is a defect shipped. Fix it before moving on, or write it down with the
+screenshot's name.
