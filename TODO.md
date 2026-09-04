@@ -156,8 +156,9 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
 - [x] `docs/developers/module-development.md` rewritten as a procedure (2026-09-04). Step 3 —
       the module linked into a local Kern through the same generator — was run against the
       template in both hosts. **Not yet** followed end to end by an agent with no other context.
-- [ ] `npx degit KernAIO/module-template` produces a module whose `pnpm test` passes on a clean
-      machine with no umbrella around it.
+- [x] `npx degit KernAIO/module-template` produces a module whose `pnpm test` passes on a clean
+      machine with no umbrella around it (2026-09-04: degit into an empty directory,
+      `pnpm install --ignore-workspace`, 11 tests green, registry packages only).
 - [x] `npx degit KernAIO/module-template` is the one way; the README no longer promises
       `npm create kern-module` (2026-09-04).
 - [x] `@kernhq/module-template` 0.2.9 and `@kernhq/workflow` 0.1.1 resolve from the public
@@ -191,11 +192,17 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
 ## Release machinery follow-ups (small, any day)
 
 - [x] A `failure()` notification on `release.yml` and `rollout.yml` (2026-09-04).
-- [ ] A module's `!`/`BREAKING CHANGE` changeset should mark the platform feed `breaking`
-      rather than defaulting to `additive`; today only a person re-signing does that.
+- [x] A module's `!`/`BREAKING CHANGE` changeset marks the platform feed `breaking`: `release.yml`
+      scans the service commits for a `!`/`BREAKING CHANGE` and each reached module's changelog
+      section for "Major Changes", and hands the result to `release-feed.yml` instead of a
+      literal `additive` (2026-09-04). First exercised by whichever release next breaks something.
 - [x] `docs/developers/releases-and-migrations.md`: *When the nightly is red* (2026-09-04).
 - [ ] Renovate: fix its onboarding or remove `renovate.json` from every repository; it has never
-      opened a pull request.
+      opened a pull request. Checked 2026-09-04: the app is installed on every repository, all 16
+      carry the config, and there is not one Renovate PR or dependency dashboard anywhere — so it
+      is not running at all, which only the Mend dashboard (app.renovatebot.com, owner login) can
+      say why. Not a launch item: the reach moves the `@kernhq/*` pins, and nothing depends on
+      Renovate.
 - [x] `repos/shell`'s 19 uncommitted files landed as the billing-suspension toast;
       `module-tracker`'s and `module-chat`'s client changes were widget strings looked up under
       the wrong prefix, landed as patches (2026-09-04).

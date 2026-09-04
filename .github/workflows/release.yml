@@ -259,6 +259,48 @@ jobs:
             echo "Commits since v$PREV say: $BUMP"
           fi
 
+          # What the release does to the schema, worked out apart from the bump: below 1.0.0 a
+          # breaking change is demoted to a minor, and a hand dispatch skips the scan above, but
+          # the feed has to say the schema broke either way — an instance on `auto` reads that
+          # field to decide whether it may apply the release unattended. A service commit with a
+          # `!` or a BREAKING CHANGE trailer says so; so does a module whose new version's
+          # changelog section carries "Major Changes", which is what a `!` changeset writes.
+          SCHEMA=additive
+          for repo in $SERVICES; do
+            if [ "$PREV" = "0.0.0" ]; then
+              LOG=$(gh api "/repos/KernAIO/$repo/commits?sha=main&per_page=100" --jq '.[].commit.message')
+            else
+              LOG=$(gh api "/repos/KernAIO/$repo/compare/v$PREV...main" --jq '.commits[].commit.message' 2>/dev/null || echo "")
+            fi
+            if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:' || echo "$LOG" | grep -q 'BREAKING CHANGE'; then
+              echo "$repo: a breaking commit since v$PREV"
+              SCHEMA=breaking; break
+            fi
+          done
+          if [ -f reach.json ] && [ "$SCHEMA" = "additive" ]; then
+            SCHEMA=$(node -e '
+              const { execFileSync } = require("child_process")
+              const reach = JSON.parse(require("fs").readFileSync("reach.json", "utf8"))
+              let schema = "additive"
+              for (const [id, m] of Object.entries(reach.modules)) {
+                if (!m.to || m.from === m.to) continue
+                let encoded = ""
+                try {
+                  encoded = execFileSync("gh", ["api", `/repos/KernAIO/module-${id}/contents/CHANGELOG.md`, "--jq", ".content"], { encoding: "utf8" })
+                } catch { continue }
+                const text = Buffer.from(encoded, "base64").toString("utf8")
+                const section = text.split(/^## /m).find((s) => s.startsWith(`${m.to}\n`)) ?? ""
+                if (/^### Major Changes/m.test(section)) {
+                  console.error(`module-${id} ${m.to} carries a major change`)
+                  schema = "breaking"
+                }
+              }
+              console.log(schema)
+            ')
+          fi
+          echo "schema=$SCHEMA" >> "$GITHUB_OUTPUT"
+          echo "Schema: $SCHEMA"
+
           IFS=. read -r MA MI PA <<< "$PREV"
           # Before 1.0.0 an *inferred* breaking change is a minor, not a major. Without this the
           # first `feat!:` would quietly declare Kern 1.0.0 — a statement about stability nobody
@@ -547,7 +589,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --field version="${{ steps.v.outputs.next }}" \
             --field previous="${{ steps.prev.outputs.version }}" \
-            --field schema=additive
+            --field schema="${{ steps.v.outputs.schema }}"
 
       - name: Say so if the modules could not be advanced
         if: steps.reach.outputs.outcome == 'failed' || steps.reach-ci.outputs.outcome == 'failed'
