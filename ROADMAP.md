@@ -52,7 +52,11 @@ Verified on 2026-09-02 by reading the registry, the routes and the release feed 
   procedures (assets, fields, custody, categories, repairs, attachments, stats) has a client call
   site — nothing server-only.
 - **Billing** — plans, subscriptions, entitlements and Stripe checkout, administered from the admin
-  console. Off by default on a self-hosted instance.
+  console. Off by default on a self-hosted instance. Reachability audited 2026-09-03: 13 of the 14
+  contract procedures (plans, subscription, admin) have client call sites (PlansAdmin,
+  SubscriptionsAdmin, PlanSettings) — nothing server-only. The one miss, `plans.public`, is
+  deliberate: the unauthenticated catalogue kernaio.com's pricing page regenerates from on every
+  build (core's diagnostics test holds it as the only public billing surface).
 - **Release and update** — a nightly release that advances every module, signs a feed, rolls the
   cloud out as the canary with a migration dry run, snapshot, maintenance mode and rollback; a
   self-hosted instance that notifies or updates itself inside a window it chooses. Automatic end to
