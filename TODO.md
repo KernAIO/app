@@ -47,8 +47,11 @@ takes no payment, and has no backup.
       `we_1UBvZWRxQj7Rxe4EL4l2SRY6`. **The cloud too** (2026-09-04 11:56 UTC): sandbox keys set
       on Coolify, Team chosen from app.kernaio.com's own billing screen, hosted Checkout with the
       test card, the webhook delivered to the cloud — *Payment received*, Team, trialing until
-      2026-09-18, Stripe ids stored. Still to do in sandbox: grace expiry → suspended by the
-      hourly job, full cancel → reactivate.
+      2026-09-18, Stripe ids stored. And the rest (2026-09-04 12:15 UTC): grace expiry →
+      `suspended` by `billing.close-grace-periods` (run by hand against the drill database —
+      cron jobs run in the worker role, not the API) → every write 409 → choosing the plan again
+      reactivated in place; a full Stripe-side cancel → `canceled` → 409 → a *fresh* Checkout
+      (no reprice on a dead subscription) → active, third invoice mirrored. Nothing left untried.
 - [x] **Entitlements enforced** (2026-09-04, sandbox drill): seats — the 11th acceptance on a
       10-seat plan refused with `billing.seats.limit_reached` (a single invitation is checked
       against members + that batch, acceptance against the live count); storage — an upload over
