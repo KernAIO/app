@@ -203,10 +203,15 @@ services:
     environment: { <<: *kern-env, PORT: 4100 }
     depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
+  # MAIL_WEBHOOK_TOKEN is the shared secret a provider's bounce and complaint webhooks must present.
+  # Without it the endpoint is open to the internet, and a forged bounce permanently suppresses an
+  # address instance-wide. It is a Coolify magic variable, so Coolify generates it on the first
+  # deploy and there is nothing to set by hand; it is on this service alone because nothing else
+  # reads it.
   mail:
     image: ghcr.io/kernaio/mail:${KERN_VERSION:-latest}
     restart: unless-stopped
-    environment: { <<: *kern-env, PORT: 4200 }
+    environment: { <<: *kern-env, PORT: 4200, MAIL_WEBHOOK_TOKEN: "${SERVICE_PASSWORD_MAILWEBHOOK}" }
     depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   collab:

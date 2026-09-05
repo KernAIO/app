@@ -139,6 +139,19 @@ if [ -z "$(env_value KERN_DB_APP_PASSWORD)" ]; then
   info "generated KERN_DB_APP_PASSWORD (the services stop connecting as the database superuser)"
 fi
 
+# Same shape, same reason: an instance installed before the mail webhooks required a shared secret
+# has no MAIL_WEBHOOK_TOKEN, and .env is never rewritten by an upgrade. Mail refuses every webhook
+# while it is empty, so bounce and complaint handling would silently stop at this upgrade.
+#
+# This only reaches an instance whose docker-compose.yml passes MAIL_WEBHOOK_TOKEN to the mail
+# service. An upgrade does not re-download the compose file, so an older instance needs the new one
+# from the release before the variable is read at all — see the upgrade notes.
+if [ -z "$(env_value MAIL_WEBHOOK_TOKEN)" ]; then
+  command -v openssl >/dev/null || fail "openssl is needed to generate MAIL_WEBHOOK_TOKEN. Set it in .env by hand."
+  set_env MAIL_WEBHOOK_TOKEN "$(openssl rand -hex 32)"
+  info "generated MAIL_WEBHOOK_TOKEN — re-point your provider's webhooks at the new ?token= value"
+fi
+
 compose ps --status running --quiet postgres >/dev/null 2>&1 || fail "Postgres is not running."
 compose exec -T postgres pg_isready -U "$(env_value POSTGRES_USER)" >/dev/null \
   || fail "Postgres is not accepting connections."

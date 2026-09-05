@@ -186,6 +186,10 @@ if [ ! -f .env ]; then
   set_env S3_SECRET_KEY         "$(gen)"
   set_env LIVEKIT_API_KEY       "kern$(openssl rand -hex 4)"
   set_env LIVEKIT_API_SECRET    "$(gen)"
+  # The secret a provider's bounce and complaint webhooks must present. Generated rather than left
+  # to the operator because the endpoint is reachable from the internet: without a token, anyone can
+  # post a forged bounce and permanently suppress any address on the instance.
+  set_env MAIL_WEBHOOK_TOKEN    "$(gen)"
   set_env KERN_ADMIN_EMAIL      "$EMAIL"
   set_env KERN_ADMIN_PASSWORD   "$PASS"
   set_env MAIL_FROM             "Kern <no-reply@$DOMAIN>"
@@ -197,6 +201,12 @@ else
   if ! grep -q "^KERN_DB_APP_PASSWORD='.\+'" .env; then
     set_env KERN_DB_APP_PASSWORD "$(gen)"
     echo "✔ generated KERN_DB_APP_PASSWORD (the services stop connecting as the database superuser)"
+  fi
+  # An instance from before the mail webhooks required a token has none, and an empty one makes mail
+  # refuse every webhook. Fill it in rather than leave bounce handling quietly switched off.
+  if ! grep -q "^MAIL_WEBHOOK_TOKEN='.\+'" .env; then
+    set_env MAIL_WEBHOOK_TOKEN "$(gen)"
+    echo "✔ generated MAIL_WEBHOOK_TOKEN (mail webhooks now need one; re-point your provider at it)"
   fi
   echo "✔ .env already exists, left alone"
 fi

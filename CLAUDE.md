@@ -491,6 +491,16 @@ pnpm dev       # every service with hot reload
   prefix. Prove a routing change by running the real Caddyfile in a `caddy` container against stub
   upstreams and curling each path to see which upstream answers — `caddy validate` only says the
   file parses, and the drift check only says the three match.
+- **An upgrade never re-downloads `docker-compose.yml`, `Caddyfile` or `kern-upgrade.sh`.**
+  `install.sh` fetches a file only when it is absent (`[ -f "$f" ] || curl`), and `kern-upgrade.sh`
+  changes `KERN_VERSION` in `.env` and pulls images — nothing else. So a fix that lives in the
+  compose file or the Caddy config reaches **new installs only**, however many releases go by, and
+  an existing instance keeps the copy it was installed with for ever. Plan for it: a change to a
+  service's env contract or its routing needs a line in the release notes telling operators to take
+  the new file, and anything that must reach every instance belongs in an image or a migration
+  instead. A new required secret is the one part that *can* be handled — put a backfill beside the
+  `KERN_DB_APP_PASSWORD` one in `kern-upgrade.sh`, and remember it only runs for instances that
+  already have a new enough copy of that script.
 - **The images are `amd64` only.** `docker.yml` in each service repo has no `platforms:`, so
   `build-push-action` builds for the runner. Every requirement we publish says x86-64 because of
   that one omission — adding `platforms: linux/amd64,linux/arm64` (and QEMU) is what changes it.

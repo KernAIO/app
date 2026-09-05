@@ -102,10 +102,19 @@ services:
     environment: { <<: *kern-env, PORT: 4100 }
     depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
+  # MAIL_WEBHOOK_TOKEN is the shared secret a provider's bounce and complaint webhooks must present.
+  # It is on this service alone rather than in the shared environment: nothing else reads it, and a
+  # secret handed to every container is a secret with six ways out instead of one.
+  #
+  # Without it the endpoint was open to the internet, and a forged bounce permanently suppresses an
+  # address instance-wide — anyone could have stopped mail to any recipient. install.sh generates
+  # this beside the other secrets; kern-upgrade.sh fills it in for an instance that predates it. If
+  # it is ever empty, mail refuses every webhook rather than trusting one, so the failure is
+  # deliveries that stop being marked bounced — never a forged suppression.
   mail:
     image: ghcr.io/kernaio/mail:${KERN_VERSION}
     restart: unless-stopped
-    environment: { <<: *kern-env, PORT: 4200 }
+    environment: { <<: *kern-env, PORT: 4200, MAIL_WEBHOOK_TOKEN: "${MAIL_WEBHOOK_TOKEN}" }
     depends_on: { core: { condition: service_healthy }, db-init: { condition: service_completed_successfully } }
 
   collab:
