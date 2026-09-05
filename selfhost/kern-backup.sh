@@ -48,7 +48,9 @@ case "$KEEP" in ''|*[!0-9]*) fail "--keep takes a number, not \"$KEEP\"." ;; esa
 
 if [ "$LIST_ONLY" = true ]; then
   [ -d "$BACKUP_DIR" ] || fail "No backups in $BACKUP_DIR yet."
-  du -sh "$BACKUP_DIR"/*/ 2>/dev/null || fail "No backups in $BACKUP_DIR yet."
+  # The same glob the prune uses, so what this lists and what that counts are the same set. A backup
+  # in progress is a dot-prefixed `.<stamp>.partial` directory and matches neither.
+  du -sh "$BACKUP_DIR"/[0-9]*-[0-9]*/ 2>/dev/null || fail "No backups in $BACKUP_DIR yet."
   exit 0
 fi
 
@@ -65,11 +67,29 @@ compose ps --status running --quiet postgres >/dev/null 2>&1 || fail "Postgres i
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DEST="$BACKUP_DIR/$STAMP"
-mkdir -p "$DEST" || fail "Could not create $DEST."
 
-# A half-written backup that looks finished is worse than none, so the directory is only given its
-# real name once every part has been written.
-cleanup_failed() { rm -rf "$DEST"; }
+# A half-written backup that looks finished is worse than none — and this one did look finished. The
+# directory used to be created under its final name and never renamed, so a backup interrupted by the
+# systemd timer's 6h TimeoutStartSec, a reboot or a Ctrl-C left a `<stamp>/` holding a truncated dump
+# and no files at all. It sorted newest, `--list` showed it, and the prune counted it as a good copy
+# while deleting a real one: fourteen nights of that and every backup on disk is the broken one.
+#
+# So everything is written to a dot-prefixed working directory and `mv`d into place only after
+# RESTORE.txt exists. A dot prefix is what keeps it out of `--list` and out of the prune — both use
+# globs that cannot match a leading dot — and `mv` within one directory is atomic, so the final name
+# never exists in a partial state. The trap covers the signals; the exit path covers `fail`.
+WORK="$BACKUP_DIR/.$STAMP.partial"
+mkdir -p "$WORK" || fail "Could not create $WORK."
+
+# `return 0` is load-bearing, not tidiness. An EXIT trap whose last command fails takes the whole
+# script's exit status with it, so a handler ending in a false test turns a completed backup into a
+# non-zero exit — and systemd would mail the operator a failure every night for a backup that worked.
+cleanup_failed() { [ -n "${WORK:-}" ] && rm -rf "$WORK"; return 0; }
+trap cleanup_failed EXIT INT TERM
+
+# Sweep working directories an earlier run abandoned. Only ones untouched for a day, so a backup
+# running right now in another shell is never touched.
+find "$BACKUP_DIR" -maxdepth 1 -type d -name '.*.partial' -mtime +0 -exec rm -rf {} + 2>/dev/null || true
 
 # ---------------------------------------------------------------- database
 
@@ -79,11 +99,10 @@ step "Dumping the database"
 # owner and is not filtered by row-level security — a dump taken as kern_app would silently contain
 # only the rows its policies let it see, which is the worst possible backup.
 if ! compose exec -T postgres pg_dump \
-      -U "$(env_value POSTGRES_USER)" -Fc "$(env_value POSTGRES_DB)" > "$DEST/database.dump"; then
-  cleanup_failed
+      -U "$(env_value POSTGRES_USER)" -Fc "$(env_value POSTGRES_DB)" > "$WORK/database.dump"; then
   fail "The database dump failed. Nothing was kept."
 fi
-info "database.dump ($(du -h "$DEST/database.dump" | cut -f1))"
+info "database.dump ($(du -h "$WORK/database.dump" | cut -f1))"
 
 # ---------------------------------------------------------------- object storage
 
@@ -94,43 +113,42 @@ S3_SECRET_KEY="$(env_value S3_SECRET_KEY)"
 S3_ENDPOINT="$(env_value S3_ENDPOINT)"
 
 if compose ps --status running --quiet minio >/dev/null 2>&1; then
-  mkdir -p "$DEST/files"
+  mkdir -p "$WORK/files"
   # `mc mirror` into a mounted directory, run on the compose network so it reaches minio by name.
   # --overwrite --remove makes the copy match the bucket rather than accumulate: without --remove a
   # mirror only ever grows, and a "backup" that can never forget a deleted file is not a copy of
   # anything that existed.
   if compose run --rm --no-deps \
-      -v "$DEST/files:/backup" \
+      -v "$WORK/files:/backup" \
       --entrypoint /bin/sh minio-init -c "
         mc alias set src '$S3_ENDPOINT' '$S3_ACCESS_KEY' '$S3_SECRET_KEY' >/dev/null &&
         mc mirror --overwrite --remove --quiet \"src/$S3_BUCKET\" /backup
       "; then
-    info "files/ ($(du -sh "$DEST/files" | cut -f1))"
+    info "files/ ($(du -sh "$WORK/files" | cut -f1))"
   else
-    cleanup_failed
     fail "The object storage mirror failed. Nothing was kept."
   fi
 else
   # An instance pointed at an external S3 has nothing local to mirror, and copying somebody else's
   # bucket to this disk is not this script's business. Say so rather than leaving a silent gap.
   printf 'This instance uses external object storage at %s.\nIt is NOT in this backup; back it up where it lives.\n' \
-    "$S3_ENDPOINT" > "$DEST/files-EXTERNAL.txt"
+    "$S3_ENDPOINT" > "$WORK/files-EXTERNAL.txt"
   info "object storage is external ($S3_ENDPOINT) — recorded, not copied"
 fi
 
 # ---------------------------------------------------------------- configuration
 
 step "Copying the configuration"
-cp .env "$DEST/.env"
-cp docker-compose.yml "$DEST/docker-compose.yml"
-[ -f Caddyfile ] && cp Caddyfile "$DEST/Caddyfile"
-[ -f livekit.yaml ] && cp livekit.yaml "$DEST/livekit.yaml"
-[ -d postgres-init ] && cp -R postgres-init "$DEST/postgres-init"
+cp .env "$WORK/.env"
+cp docker-compose.yml "$WORK/docker-compose.yml"
+[ -f Caddyfile ] && cp Caddyfile "$WORK/Caddyfile"
+[ -f livekit.yaml ] && cp livekit.yaml "$WORK/livekit.yaml"
+[ -d postgres-init ] && cp -R postgres-init "$WORK/postgres-init"
 # .env holds every secret this instance has, so the backup is exactly as sensitive as .env is.
-chmod -R go-rwx "$DEST"
+chmod -R go-rwx "$WORK"
 info "configuration copied (.env included — treat this directory as a secret)"
 
-cat > "$DEST/RESTORE.txt" <<EOS
+cat > "$WORK/RESTORE.txt" <<EOS
 Kern backup $STAMP
 Version at the time: $(env_value KERN_VERSION)
 
@@ -168,11 +186,21 @@ The database and the files were captured a few seconds apart, not atomically. A 
 during the backup may be in one and not the other.
 EOS
 
+# ---------------------------------------------------------------- publish
+
+# Every part is now written, so the backup becomes a backup. Until this line there was nothing under
+# a name anything else looks at; after it there is nothing under a name that is incomplete. Clearing
+# the trap first is what stops the EXIT handler deleting the finished copy.
+mv "$WORK" "$DEST" || fail "Could not move $WORK into place as $DEST."
+WORK=""
+trap - EXIT INT TERM
+
 # ---------------------------------------------------------------- prune
 
 step "Pruning"
 # Keep the newest $KEEP and no more, so backups cannot fill the disk on their own. Only directories
-# that look like a stamp are considered, so nothing else in here is ever deleted.
+# that look like a stamp are considered, so nothing else in here is ever deleted — and a backup still
+# being written is `.<stamp>.partial`, which this glob cannot match on either count.
 mapfile -t OLD < <(ls -1d "$BACKUP_DIR"/[0-9]*-[0-9]*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))")
 if [ "${#OLD[@]}" -gt 0 ]; then
   for old in "${OLD[@]}"; do

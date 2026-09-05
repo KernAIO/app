@@ -118,14 +118,14 @@ jobs:
         working-directory: selfhost
         run: |
           set -euo pipefail
-          for f in install.sh kern-upgrade.sh kern-rollback.sh; do bash -n "$f"; echo "✔ $f"; done
+          for f in install.sh kern-upgrade.sh kern-rollback.sh kern-backup.sh; do bash -n "$f"; echo "✔ $f"; done
 
       - name: shellcheck
         working-directory: selfhost
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           # SC2086 (word splitting) is deliberate for the compose profile list
-          shellcheck --severity=warning --exclude=SC2086 install.sh kern-upgrade.sh kern-rollback.sh
+          shellcheck --severity=warning --exclude=SC2086 install.sh kern-upgrade.sh kern-rollback.sh kern-backup.sh
 
       - name: Every variable the compose file reads is in .env.example
         working-directory: selfhost
