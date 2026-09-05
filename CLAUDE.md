@@ -479,6 +479,18 @@ pnpm dev       # every service with hot reload
   The other half of the trap is that **`FOO=` in `.env` defeats the pass-through**, because a blank
   assignment is still a value; `.env.example` has to comment the line out. A field with a
   `.default()` fails silently instead of loudly, since a default only fires for `undefined`.
+- **Comparing the three stacks with each other cannot find a route missing from all three.**
+  `check-selfhost-drift.py` only ever asked "has a copy fallen behind the host?", so three identical
+  configs agreed perfectly while every one of them was wrong: core serves `/mcp` and the OAuth
+  discovery documents at the **root** of its Fastify app — the paths are fixed by the MCP and
+  RFC 8414/9728 specs, so they cannot move under `/api` — no stack routed them, all of them fell
+  through to the catch-all, and MCP answered the SvelteKit app's HTML on every topology since it
+  shipped. `REQUIRED_ROUTES` in that script is the half that does not depend on the three agreeing:
+  a run of directives that must appear, in order, above `handle {`, in the host Caddyfile and both
+  inline copies. Add an entry whenever a service starts answering on a path outside an existing
+  prefix. Prove a routing change by running the real Caddyfile in a `caddy` container against stub
+  upstreams and curling each path to see which upstream answers — `caddy validate` only says the
+  file parses, and the drift check only says the three match.
 - **The images are `amd64` only.** `docker.yml` in each service repo has no `platforms:`, so
   `build-push-action` builds for the runner. Every requirement we publish says x86-64 because of
   that one omission — adding `platforms: linux/amd64,linux/arm64` (and QEMU) is what changes it.

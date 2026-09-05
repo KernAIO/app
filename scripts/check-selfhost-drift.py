@@ -19,6 +19,14 @@ Routes are compared as ordered directive lists, but a copy may deliberately drop
 service behind it does not exist there — Kern Cloud keeps no MinIO on the box (files go to Hetzner
 Object Storage, see cloud/docker-compose.yml), so it has no `/s3` handler to keep alive. Such
 omissions must be declared here, or the check fails; nothing else about the routing order may move.
+
+Comparing the copies against the host answers "did one of them fall behind?" and cannot answer "does
+any of them route this at all?" — three identical configs agree perfectly while all three are wrong.
+That is not hypothetical: core serves `/mcp` and the OAuth discovery documents at the *root* of its
+Fastify app, no stack had a route for them, every one of them fell through to the catch-all and was
+answered with the app's HTML, and this check reported no drift throughout. REQUIRED_ROUTES is the
+half that does not depend on the three agreeing: a route named there has to be present, in order,
+above the catch-all, in the host Caddyfile and in both inline copies.
 """
 
 import os
@@ -44,6 +52,49 @@ ALLOWED_MISSING = {
 # this check has to supply a value to get a document at all. A placeholder here is not a default in
 # the stack: remove the `:?` and the deploy silently gets one, which is the thing being prevented.
 PLACEHOLDER_ENV = {"KERN_ADMIN_EMAIL": "drift-check@example.invalid"}
+
+# Routes every stack must carry, whatever the three happen to agree on. Each entry is a run of
+# directives that has to appear in that order, one after another, and above the `handle {` catch-all
+# — a route below the catch-all is dead, because Caddy's first matching handler wins.
+#
+# Add one here whenever a service starts answering on a path that is not under an existing prefix.
+# The MCP entry is the reason the section exists: those paths are fixed by the MCP and RFC 8414/9728
+# specifications, so core cannot move them under /api where `handle /api/*` would already carry them.
+CATCH_ALL = "handle {"
+REQUIRED_ROUTES = {
+    "MCP and its OAuth discovery documents reach core": [
+        "@mcp path /mcp /mcp/* /.well-known/oauth-protected-resource "
+        "/.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server",
+        "handle @mcp {",
+        "reverse_proxy core:4000",
+    ],
+}
+
+
+def run_index(directives, run):
+    """Index where `run` appears as a contiguous slice of `directives`, or -1."""
+    for i in range(len(directives) - len(run) + 1):
+        if directives[i : i + len(run)] == run:
+            return i
+    return -1
+
+
+def require_routes(label, directives):
+    """Absolute check: does this config route what it must, regardless of what the others do?"""
+    global failed
+    for what, run in REQUIRED_ROUTES.items():
+        at = run_index(directives, run)
+        if at < 0:
+            failed = True
+            print(f"::error::{label}: {what} — expected these directives, in this order:")
+            for directive in run:
+                print(f"    {directive}")
+            continue
+        if CATCH_ALL in directives and at > directives.index(CATCH_ALL):
+            failed = True
+            print(f"::error::{label}: {what} — routed below the `{CATCH_ALL}` catch-all, so it never matches")
+            continue
+        print(f"✔ {what} ({label})")
 
 
 def config(path):
@@ -106,6 +157,7 @@ def emit(flag, text):
 
 host = config(HOST)
 host_routes = routes(open("selfhost/Caddyfile").read())
+require_routes("selfhost/Caddyfile", host_routes)
 
 for path, emit_flag in ((COOLIFY, "--emit-caddyfile"), (CLOUD, "--emit-cloud-caddyfile")):
     doc = config(path)
@@ -114,6 +166,7 @@ for path, emit_flag in ((COOLIFY, "--emit-caddyfile"), (CLOUD, "--emit-cloud-cad
 
     inline = inline_caddyfile(doc)
     emit(emit_flag, inline)
+    require_routes(path, routes(inline))
 
     if routes(inline) == host_routes:
         print(f"✔ Caddy routes ({path})")

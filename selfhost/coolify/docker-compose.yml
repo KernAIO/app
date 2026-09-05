@@ -117,6 +117,14 @@ services:
           handle /kern/* {
             reverse_proxy minio:9000
           }
+          # MCP, and the OAuth discovery documents an MCP client fetches before it connects. core
+          # serves these at the ROOT of its Fastify app — the paths are fixed by the MCP and
+          # RFC 8414/9728 specifications — so `handle /api/*` never saw them and they fell through
+          # to the app, which answered HTML. Keep this above the catch-all.
+          @mcp path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server
+          handle @mcp {
+            reverse_proxy core:4000
+          }
           # core API (auth, workspaces, all other modules) + OpenAPI
           handle /api/* {
             reverse_proxy core:4000

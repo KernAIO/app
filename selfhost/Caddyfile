@@ -45,6 +45,20 @@
 	handle /kern/* {
 		reverse_proxy minio:9000
 	}
+	# MCP, and the OAuth discovery documents an MCP client fetches before it connects.
+	#
+	# core serves all of these at the ROOT of its Fastify app rather than under /api — the paths are
+	# fixed by the MCP and RFC 8414/9728 specifications, so core cannot move them behind the prefix.
+	# `handle /api/*` below therefore never saw them and they fell through to the catch-all, which
+	# answered every one with the SvelteKit app's HTML. An MCP client reads that as a malformed
+	# discovery document and gives up, so MCP was unreachable on every shipped topology.
+	#
+	# The endpoints this document advertises (authorize, token, register, revoke) live under
+	# /api/mcp/oauth/* and are already routed by the block below.
+	@mcp path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server
+	handle @mcp {
+		reverse_proxy core:4000
+	}
 	# core API (auth, workspaces, all other modules) + OpenAPI
 	handle /api/* {
 		reverse_proxy core:4000
