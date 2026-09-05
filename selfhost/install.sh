@@ -89,6 +89,28 @@ set_env() { # set_env <KEY> <literal value>
 # first one and there is no escape for it — so it is the one character we have to refuse.
 has_quote() { case "$1" in *\'*) return 0 ;; *) return 1 ;; esac; }
 
+# Read a key's value out of .env, with one enclosing quote of either kind stripped. `set_env` writes
+# values single-quoted, but a hand-written .env is just as likely to be unquoted or double-quoted, so
+# a backfill guard has to read the value rather than pattern-match the line it is written on.
+env_value() { # env_value <KEY>
+  grep -E "^$1=" "$DIR/.env" | head -1 | cut -d= -f2- | sed -e "s/^['\"]//" -e "s/['\"]\$//"
+}
+
+# Is this key present AND non-empty? Every backfill below asks this, and it is the only question that
+# is right. The two shapes it replaces were both wrong in their own direction:
+#
+#   grep -q "^KEY='.\+'"   matched only a SINGLE-QUOTED value, so a hand-written `KEY=abc` looked
+#                          unset and the key was appended a second time. Compose reads the last
+#                          assignment, so the instance quietly swapped to a freshly generated secret
+#                          — a new MAIL_WEBHOOK_TOKEN silently invalidates the provider webhook URL
+#                          the operator already registered.
+#   grep -q "^KEY="        matched a present-but-blank `KEY=` too, so the backfill it guards never
+#                          ran. `.env.example` ships KERN_DIR blank, so that is the normal state of
+#                          every instance, and KERN_DIR was therefore never filled in.
+env_is_set() { # env_is_set <KEY>
+  [ -n "$(env_value "$1")" ]
+}
+
 gen() { openssl rand -hex 32; }
 
 # ---------------------------------------------------------------- files
@@ -197,18 +219,22 @@ if [ ! -f .env ]; then
   echo "✔ .env created"
 else
   # An existing instance: fill in anything this version of the installer added, and leave the rest.
-  grep -q "^KERN_DIR=" .env || set_env KERN_DIR "$DIR"
-  if ! grep -q "^KERN_DB_APP_PASSWORD='.\+'" .env; then
+  # Every guard here asks `env_is_set`, which is true only for a key that is present with a non-empty
+  # value — quoted or not. Backfilling is not free: each of these appends a *second* assignment when
+  # it misreads, and Compose takes the last one, so a guard that under-reports silently rotates a
+  # live secret.
+  env_is_set KERN_DIR || set_env KERN_DIR "$DIR"
+  if ! env_is_set KERN_DB_APP_PASSWORD; then
     set_env KERN_DB_APP_PASSWORD "$(gen)"
     echo "✔ generated KERN_DB_APP_PASSWORD (the services stop connecting as the database superuser)"
   fi
   # An instance from before the mail webhooks required a token has none, and an empty one makes mail
   # refuse every webhook. Fill it in rather than leave bounce handling quietly switched off.
-  if ! grep -q "^MAIL_WEBHOOK_TOKEN='.\+'" .env; then
+  if ! env_is_set MAIL_WEBHOOK_TOKEN; then
     set_env MAIL_WEBHOOK_TOKEN "$(gen)"
     echo "✔ generated MAIL_WEBHOOK_TOKEN (mail webhooks now need one; re-point your provider at it)"
   fi
-  echo "✔ .env already exists, left alone"
+  echo "✔ .env already exists — kept, with anything this version added filled in"
 fi
 
 # ---------------------------------------------------------------- optional services
