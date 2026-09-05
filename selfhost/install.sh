@@ -206,8 +206,8 @@ if [ ! -f .env ]; then
   set_env POSTGRES_PASSWORD     "$(gen)"
   set_env KERN_DB_APP_PASSWORD  "$(gen)"
   set_env S3_SECRET_KEY         "$(gen)"
-  set_env LIVEKIT_API_KEY       "kern$(openssl rand -hex 4)"
-  set_env LIVEKIT_API_SECRET    "$(gen)"
+  # No LIVEKIT_API_KEY / LIVEKIT_API_SECRET here. Calls are not built: no Kern service reads either
+  # variable, so generating them produced two credentials for nothing. See .env.example.
   # The secret a provider's bounce and complaint webhooks must present. Generated rather than left
   # to the operator because the endpoint is reachable from the internet: without a token, anyone can
   # post a forged bounce and permanently suppress any address on the instance.
@@ -240,7 +240,11 @@ fi
 # ---------------------------------------------------------------- optional services
 
 PROFILES=""
-yes_no "Enable video calls (LiveKit)? [y/N] " n && PROFILES="$PROFILES --profile calls"
+# Video calls are deliberately not offered. The `calls` profile still exists in docker-compose.yml,
+# but nothing in Kern uses it: no service reads LIVEKIT_URL, LIVEKIT_API_KEY or LIVEKIT_API_SECRET,
+# and there is no calls module. Answering yes used to start a LiveKit server and ask the operator to
+# open 7881/tcp and 50000-50200/udp on their firewall — 201 published UDP ports for a feature that
+# does not exist. It comes back here when something actually calls it.
 yes_no "Enable office/PDF previews (Gotenberg)? [y/N] " n && PROFILES="$PROFILES --profile preview"
 
 # ---------------------------------------------------------------- timers
@@ -275,7 +279,7 @@ fi
 
 # ---------------------------------------------------------------- start
 
-# $PROFILES has to word-split: it holds "--profile calls --profile preview" as separate arguments.
+# $PROFILES has to word-split: it holds "--profile preview" as separate arguments.
 # shellcheck disable=SC2086
 docker compose $PROFILES pull
 # shellcheck disable=SC2086
