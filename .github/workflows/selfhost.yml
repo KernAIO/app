@@ -127,6 +127,78 @@ jobs:
           # SC2086 (word splitting) is deliberate for the compose profile list
           shellcheck --severity=warning --exclude=SC2086 install.sh kern-upgrade.sh kern-rollback.sh kern-backup.sh
 
+      # An upgrade used to change KERN_VERSION and pull images, and nothing else — install.sh
+      # downloads a distribution file only when it is absent, so an instance kept the
+      # docker-compose.yml, Caddyfile and postgres-init/ it was installed with for ever. Every fix
+      # living in one of those files reached new installs only, however many releases went by; the
+      # MCP Caddy route is the worked example and is what this fixture upgrades across.
+      #
+      # No Docker and no Kern: KERN_RAW_BASE points the fetch at a directory laid out as
+      # <ref>/selfhost/<file>, and `--stack-files` is the refresh on its own.
+      - name: An upgrade brings the release's stack files forward
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d); UP="$WORK/upstream"
+
+          # v0.0.2 is this repository's selfhost/ as it stands. v0.0.1 is the same thing before the
+          # MCP route existed — the state of every instance installed before that route shipped, and
+          # a file no upgrade has ever been able to correct.
+          mkdir -p "$UP/v0.0.2" "$UP/v0.0.1"
+          cp -R selfhost "$UP/v0.0.2/selfhost"
+          cp -R selfhost "$UP/v0.0.1/selfhost"
+          python3 - "$UP/v0.0.1/selfhost/Caddyfile" <<'PY'
+          import re, sys
+          src = open("selfhost/Caddyfile").read()
+          out = re.sub(r"\n\t@mcp path [^\n]*\n\thandle @mcp \{\n[^}]*\n\t\}\n", "\n", src)
+          assert "@mcp" not in out, "fixture failed to strip the MCP route"
+          open(sys.argv[1], "w").write(out)
+          PY
+
+          new_instance() {
+            rm -rf "$1"; mkdir -p "$1"
+            cp -R "$UP/v0.0.1/selfhost/." "$1/"
+            cp selfhost/kern-upgrade.sh "$1/kern-upgrade.sh"; chmod +x "$1/kern-upgrade.sh"
+            printf "KERN_VERSION='0.0.1'\n" > "$1/.env"
+          }
+
+          echo "== an untouched instance gets the release's files =="
+          I="$WORK/untouched"; new_instance "$I"
+          grep -q '@mcp' "$I/Caddyfile" && { echo "::error::fixture already has the route"; exit 1; }
+          ( cd "$I" && KERN_RAW_BASE="$UP" ./kern-upgrade.sh --stack-files 0.0.2 )
+          grep -q '@mcp path /mcp' "$I/Caddyfile" \
+            || { echo "::error::the MCP route did not reach the upgraded instance"; exit 1; }
+          cmp -s "$I/Caddyfile" selfhost/Caddyfile \
+            || { echo "::error::the Caddyfile is not the one this release ships"; exit 1; }
+          [ -n "$(find "$I/snapshots" -name Caddyfile)" ] \
+            || { echo "::error::the replaced Caddyfile was not kept"; exit 1; }
+          echo "✔ the route arrived and the old copy was kept"
+
+          echo "== a second run changes nothing =="
+          # Written to a file rather than piped into grep: `grep -q` closes the pipe on its first
+          # match, the script dies of SIGPIPE, and pipefail then reports the pipeline as failed.
+          ( cd "$I" && KERN_RAW_BASE="$UP" ./kern-upgrade.sh --stack-files 0.0.2 ) > "$WORK/out2" 2>&1
+          grep -q 'already matches release' "$WORK/out2" \
+            || { echo "::error::a second run did not report the files as current"; cat "$WORK/out2"; exit 1; }
+          echo "✔ idempotent"
+
+          echo "== an operator's edit is refused loudly, not overwritten =="
+          I="$WORK/edited"; new_instance "$I"
+          printf '\n# operator added a redirect\n' >> "$I/Caddyfile"
+          before=$(cat "$I/Caddyfile")
+          if ( cd "$I" && KERN_RAW_BASE="$UP" ./kern-upgrade.sh --stack-files 0.0.2 ) > "$WORK/out" 2>&1; then
+            echo "::error::an edited Caddyfile was reported as a success"; cat "$WORK/out"; exit 1
+          fi
+          [ "$before" = "$(cat "$I/Caddyfile")" ] \
+            || { echo "::error::an operator's edit was overwritten"; exit 1; }
+          grep -q 'NOT brought forward' "$WORK/out" \
+            || { echo "::error::the refusal was silent"; cat "$WORK/out"; exit 1; }
+          [ -n "$(find "$I/snapshots" -name 'Caddyfile.diff')" ] \
+            || { echo "::error::no diff was left for the operator to merge"; exit 1; }
+          cmp -s "$I/docker-compose.yml" selfhost/docker-compose.yml \
+            || { echo "::error::one refused file stopped the others coming forward"; exit 1; }
+          echo "✔ refused with a diff, and the unedited files still came forward"
+          rm -rf "$WORK"
+
       - name: Every variable the compose file reads is in .env.example
         working-directory: selfhost
         run: |
