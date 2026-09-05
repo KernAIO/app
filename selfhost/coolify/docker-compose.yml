@@ -164,6 +164,10 @@ services:
       # Caddy, out through Coolify's proxy, and back in to reach a service one hop away. Server-side
       # rendering of published Quire pages is what depends on it.
       KERN_API_ORIGIN: ${KERN_API_ORIGIN:-http://core:4000}
+      # Which social buttons the sign-in and sign-up screens draw — a comma-separated subset of
+      # google,github,microsoft. The shell cannot ask core what is configured, so this list is what
+      # decides whether a button exists; the credentials on core decide whether pressing it works.
+      PUBLIC_AUTH_PROVIDERS:
     depends_on: [core]
 
   core:
@@ -180,6 +184,21 @@ services:
       PORT: 4000
       KERN_ADMIN_EMAIL: ${KERN_ADMIN_EMAIL:?set KERN_ADMIN_EMAIL to the first administrator's email address before deploying}
       KERN_ADMIN_PASSWORD: ${SERVICE_PASSWORD_ADMIN}
+      # Social sign-in. On core alone, because core is the only service that reads them and a client
+      # secret handed to every container is a secret with six ways out. Each is a bare key —
+      # Compose's pass-through form — so a provider you have not configured in Coolify's Environment
+      # Variables tab stays absent rather than arriving as an empty string.
+      #
+      # Setting these makes the provider work; it does not make a button appear. Add the provider's
+      # name to PUBLIC_AUTH_PROVIDERS on the app service for that.
+      GOOGLE_CLIENT_ID:
+      GOOGLE_CLIENT_SECRET:
+      GITHUB_CLIENT_ID:
+      GITHUB_CLIENT_SECRET:
+      MICROSOFT_CLIENT_ID:
+      MICROSOFT_CLIENT_SECRET:
+      # Absent means `common` — any Microsoft account. Set it to a directory id to admit one tenant.
+      MICROSOFT_TENANT_ID:
     depends_on:
       db-init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }

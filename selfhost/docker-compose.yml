@@ -83,12 +83,37 @@ services:
       # getting a real certificate. Defaulted rather than required, so an instance whose .env predates
       # this key still gets the right address.
       KERN_API_ORIGIN: ${KERN_API_ORIGIN:-http://core:4000}
+      # Which social buttons the sign-in and sign-up screens draw. This is the half that is easy to
+      # miss: configuring the credentials on core makes the provider *work*, and nothing appears
+      # until this list names it too, because the shell has no way to ask core what is configured.
+      # A comma-separated subset of google,github,microsoft; anything else in it is ignored.
+      PUBLIC_AUTH_PROVIDERS:
     depends_on: [core]
 
+  # The social sign-in credentials are on core alone, not in the shared environment: core is the only
+  # service that reads them, and a client secret handed to every container is a secret with six ways
+  # out instead of one. Same reasoning as MAIL_WEBHOOK_TOKEN on `mail` below.
+  #
+  # Each is written as a bare key — Compose's pass-through form — so the variable reaches core only
+  # when the operator has actually set it, and is absent otherwise. core builds its provider list with
+  # `if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)`, so a half-configured pair simply leaves
+  # that provider off rather than registering a provider that cannot complete a sign-in.
   core:
     image: ${KERN_IMAGE_CORE:-ghcr.io/kernaio/core}:${KERN_VERSION}
     restart: unless-stopped
-    environment: { <<: *kern-env, PORT: 4000, KERN_ADMIN_EMAIL: "${KERN_ADMIN_EMAIL}", KERN_ADMIN_PASSWORD: "${KERN_ADMIN_PASSWORD}" }
+    environment:
+      <<: *kern-env
+      PORT: 4000
+      KERN_ADMIN_EMAIL: "${KERN_ADMIN_EMAIL}"
+      KERN_ADMIN_PASSWORD: "${KERN_ADMIN_PASSWORD}"
+      GOOGLE_CLIENT_ID:
+      GOOGLE_CLIENT_SECRET:
+      GITHUB_CLIENT_ID:
+      GITHUB_CLIENT_SECRET:
+      MICROSOFT_CLIENT_ID:
+      MICROSOFT_CLIENT_SECRET:
+      # Absent means `common` — any Microsoft account. Set it to a directory id to admit one tenant.
+      MICROSOFT_TENANT_ID:
     depends_on: { db-init: { condition: service_completed_successfully }, postgres: { condition: service_healthy }, nats: { condition: service_started }, valkey: { condition: service_started }, minio: { condition: service_started } }
     # No healthcheck override here. The image already carries one, and it is the only kind that
     # can work: node:24-slim has neither wget nor curl, so a `wget` test can never run, and the
