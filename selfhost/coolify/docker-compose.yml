@@ -61,9 +61,14 @@ x-kern-env: &kern-env
   KERN_DEFAULT_PLAN_SLUG: ${KERN_DEFAULT_PLAN_SLUG:-}
   # `open` lets anyone create an account; `invite` limits it to an invitation or an administrator.
   # It seeds the setting on the very first boot only — afterwards Admin -> Settings owns it, and
-  # changing this does nothing. Empty is the safe default for a server on the internet: core then
+  # changing this does nothing. Unset is the safe default for a server on the internet: core then
   # seeds invite-only whenever a bootstrap admin is configured below.
-  KERN_SIGNUP: ${KERN_SIGNUP:-}
+  #
+  # Written with no value on purpose — Compose's pass-through form, which passes the variable only
+  # when it is actually set in Coolify's environment. Interpolating it with an empty `:-` default
+  # sets it to the empty string instead, and core's `z.enum(['open','invite']).optional()` rejects ''
+  # as "Invalid option", so core throws at boot and everything waiting on its health never starts.
+  KERN_SIGNUP:
 
 services:
   caddy:

@@ -467,6 +467,18 @@ pnpm dev       # every service with hot reload
   `docker-compose.yml`, `Caddyfile`, `.env.example` and `coolify/docker-compose.yml` here too — and
   `install.sh`'s file list, which is what an existing instance never re-downloads.
   `scripts/check-selfhost-drift.py` is what notices when the Coolify copy is left behind; CI runs it.
+- **`FOO: ${FOO:-}` does not mean "unset", it means the empty string — and zod tells the two apart.**
+  Compose emits the key with an empty value, so a schema sees a *value* to validate: core parses
+  `KERN_SIGNUP` with `z.enum(['open','invite']).optional()`, which answers "Invalid option" for `''`,
+  throws in `loadCoreEnv` before :4000 is bound, and takes core-worker, chat, mail and collab down
+  with it because they all wait on core being healthy. Every fresh self-host install after
+  2026-08-28 came up with nothing running. The pass-through form is a **bare key with no value**
+  (`KERN_SIGNUP:`, the mapping equivalent of a `- FOO` list entry): Compose then sets the variable
+  only when it is actually set, and omits it otherwise. Verify by running a container, not by reading
+  `docker compose config` — the config prints `null` for both a pass-through and a genuine absence.
+  The other half of the trap is that **`FOO=` in `.env` defeats the pass-through**, because a blank
+  assignment is still a value; `.env.example` has to comment the line out. A field with a
+  `.default()` fails silently instead of loudly, since a default only fires for `undefined`.
 - **The images are `amd64` only.** `docker.yml` in each service repo has no `platforms:`, so
   `build-push-action` builds for the runner. Every requirement we publish says x86-64 because of
   that one omission — adding `platforms: linux/amd64,linux/arm64` (and QEMU) is what changes it.

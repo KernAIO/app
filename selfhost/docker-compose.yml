@@ -39,9 +39,19 @@ x-kern-env: &kern-env
   KERN_DEFAULT_PLAN_SLUG: ${KERN_DEFAULT_PLAN_SLUG:-}
   # `open` lets anyone create an account; `invite` limits it to an invitation or an administrator.
   # It seeds the setting on the very first boot only — afterwards Admin -> Settings owns it, and
-  # changing this does nothing. Empty is the safe default for a server on the internet: core then
+  # changing this does nothing. Unset is the safe default for a server on the internet: core then
   # seeds invite-only whenever a bootstrap admin is configured below.
-  KERN_SIGNUP: ${KERN_SIGNUP:-}
+  #
+  # Written with no value on purpose, which is Compose's pass-through form: the variable reaches the
+  # container only when it is actually set, and is absent otherwise. Interpolating it with an empty
+  # `:-` default looks equivalent and is not — that sets the variable to the empty string, and core
+  # parses this with `z.enum(['open','invite']).optional()`, which rejects '' as "Invalid option"
+  # rather than reading it as absent. That throws during core's boot, and core-worker, chat, mail and
+  # collab all wait on `condition: service_healthy`, so a fresh install came up with nothing running.
+  #
+  # `.env.example` ships the line commented out for the same reason: a blank assignment in .env is a
+  # value, and it would defeat the pass-through.
+  KERN_SIGNUP:
 
 services:
   caddy:
