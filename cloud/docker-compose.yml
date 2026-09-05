@@ -137,6 +137,11 @@ services:
       PUBLIC_API_URL: ${SERVICE_URL_CADDY}
       PUBLIC_WS_URL: ${SERVICE_URL_CADDY}/ws
       PUBLIC_COLLAB_URL: ${SERVICE_URL_CADDY}/collab
+      # Where the app reaches core when it renders a page itself. The PUBLIC_* addresses above are
+      # browser addresses, and here that means app.kernaio.com — so without this every server-rendered
+      # published Quire page left the container, went out to Cloudflare and came back in to reach a
+      # service one hop away on the same Docker network.
+      KERN_API_ORIGIN: ${KERN_API_ORIGIN:-http://core:4000}
     depends_on: [core]
 
   core:

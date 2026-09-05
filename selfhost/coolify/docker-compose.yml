@@ -159,6 +159,11 @@ services:
       PUBLIC_API_URL: ${SERVICE_URL_CADDY}
       PUBLIC_WS_URL: ${SERVICE_URL_CADDY}/ws
       PUBLIC_COLLAB_URL: ${SERVICE_URL_CADDY}/collab
+      # Where the app reaches core when it renders a page itself. The PUBLIC_* addresses above are
+      # browser addresses; using one for a server-side call sends the shell container out through
+      # Caddy, out through Coolify's proxy, and back in to reach a service one hop away. Server-side
+      # rendering of published Quire pages is what depends on it.
+      KERN_API_ORIGIN: ${KERN_API_ORIGIN:-http://core:4000}
     depends_on: [core]
 
   core:
