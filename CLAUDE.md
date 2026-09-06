@@ -772,6 +772,19 @@ pnpm dev       # every service with hot reload
   silently invalidated the webhook URL already registered with the provider. `grep -q "^KEY="` is the
   same mistake reversed: it matches a blank line, which is what `.env.example` ships, so the
   `KERN_DIR` backfill it guarded never ran on any instance.
+- **Docker Desktop maps container ownership to the host user, so every uid and permission bug in a
+  script that writes through a container is invisible on this machine and certain on a Linux
+  runner.** `kern-backup.sh` had been run on macOS for as long as it existed, and every one of those
+  runs was root-equivalent by accident. The restore drill's first CI run found two defects of this
+  exact class in one go: the `mc` container wrote the object mirror as root, so `chmod -R go-rwx`
+  failed with "Operation not permitted" for a non-root operator and the cleanup trap could not even
+  remove the partial directory; and that same blanket `chmod` left `postgres-init/` at 0700, which
+  the Postgres container on the restored host reads as uid 999 — it cannot list the mount, exits,
+  and restarts, so the database the restore exists for never starts. Neither is reproducible here.
+  Anything that bind-mounts a directory a container writes into, or that a container must read back,
+  belongs in `selfhost.yml` rather than in a local run — and a `chmod -R` over a directory holding
+  files for *different* readers is the shape to distrust: `.env` wants 0600 and the init scripts want
+  world-readable, and one recursive call cannot mean both.
 - **A prune glob decides what counts as a backup, so anything else you put in that directory is at
   risk.** `kern-backup.sh` created its directory under the final name and never renamed it, so a run
   killed by the timer's 6h `TimeoutStartSec`, a reboot or a Ctrl-C left a `<stamp>/` holding a
