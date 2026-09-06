@@ -189,8 +189,10 @@ in `repos/core/src/service.ts` (`featureModules`) — a fork of both. v1.0 makes
       the only way `force row level security` binds at all: **157 tenant tables, 145 secured, these
       same twelve without.** The twelve names above are exactly right; nothing new, nothing
       missing. All twelve are deliberate, each with the filtering code named in the module's own
-      test. Two corrections that came out of doing it rather than reading it: the earlier
-      155/143 counts match no database anybody can now identify and are replaced by these, and a
+      test. Two corrections that came out of doing it rather than reading it: the earlier 155/143
+      counts were measured on app.kernaio.com at 0.3.0 (`website/CLAUDE.md` records the run) and so
+      describe a different, older schema rather than being wrong — date a count or it reads as a
+      contradiction later; and a
       `relkind='r'` query silently skips a **partitioned parent** — `mod_hr.punches` is invisible to
       it and is in fact secured, along with all 18 of its partitions. Use `relkind in ('r','p')`.
 - [x] **The guard that should catch a missing policy cannot see one.** Only `chat`'s and `mail`'s

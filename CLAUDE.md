@@ -191,7 +191,9 @@ The repositories are **public**, so every commit is visible the moment it is pus
   in its output, so an audit that under-selects looks exactly like an audit that found nothing
   wrong. Measured 2026-09-06 on a database created from nothing — which is also the only place
   these numbers mean anything, because the dev database's schema predates several of the policies
-  and reports four secured tables as unsecured.
+  and reports four secured tables as unsecured. **Date every count you write down**: the previous
+  155/143 was a true reading of app.kernaio.com at 0.3.0, and undated beside a 157/145 taken from a
+  newer schema it reads as one of the two being wrong. Neither was.
 - **A table that legitimately serves every workspace at once binds `'*'`, never nothing.** Chat's
   policies admit `app.workspace_id = '*'` for the gateway's cross-workspace checks, and mail's do
   the same for the send job, the provider webhooks and the suppression check. The alternative —
