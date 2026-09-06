@@ -162,11 +162,21 @@ if compose ps --status running --quiet minio >/dev/null 2>&1; then
   # --overwrite --remove makes the copy match the bucket rather than accumulate: without --remove a
   # mirror only ever grows, and a "backup" that can never forget a deleted file is not a copy of
   # anything that existed.
+  # --user is what makes the mirrored files belong to whoever ran this script. Without it the
+  # container writes them as root, and then the `chmod -R go-rwx` below fails with "Operation not
+  # permitted" for any operator who is not root — taking the whole backup with it, and leaving a
+  # partial directory the cleanup trap cannot remove either ("rm: Permission denied"). Measured in
+  # CI on 2026-09-06, the first time this script was ever run by a non-root user.
+  #
+  # --config-dir comes with it: mc writes its alias config to $HOME/.mc, and a uid with no home in
+  # the image cannot create that. /tmp is writable by anyone, and the config is thrown away with
+  # the container.
   if compose run --rm --no-deps \
+      --user "$(id -u):$(id -g)" \
       -v "$WORK/files:/backup" \
       --entrypoint /bin/sh minio-init -c "
-        mc alias set src '$S3_ENDPOINT' '$S3_ACCESS_KEY' '$S3_SECRET_KEY' >/dev/null &&
-        mc mirror --overwrite --remove --quiet \"src/$S3_BUCKET\" /backup
+        mc --config-dir /tmp/mc alias set src '$S3_ENDPOINT' '$S3_ACCESS_KEY' '$S3_SECRET_KEY' >/dev/null &&
+        mc --config-dir /tmp/mc mirror --overwrite --remove --quiet \"src/$S3_BUCKET\" /backup
       "; then
     info "files/ ($(du -sh "$WORK/files" | cut -f1))"
   else
