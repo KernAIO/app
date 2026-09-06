@@ -29,6 +29,15 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - **Do not add `Claude-Session:`, `Co-Authored-By: Claude`, "Generated with", or any AI trailer/branding to commit messages, PRs, or code comments.**
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, with optional scope). Imperative mood, ≤ 72-char subject.
 - Push to `origin main`. Never force-push. If `git pull --rebase` complains about unstaged files that aren't yours (parallel agents share worktrees), use `git -c rebase.autoStash=true pull --rebase`.
+- **`autoStash` stashes the index too, and gives it back unstaged — so `git add` before it means
+  the commit after it is incomplete.** Autostash saves staged *and* unstaged changes and restores
+  them all to the working tree; the staging you did is gone. It prints "Applied autostash" and
+  exits 0, `git commit` then commits whatever is still staged — untracked files added with
+  `git add` survive, tracked modifications do not — and the result is a green push that carries a
+  new script without the `package.json` and workflow lines that call it. Measured on 2026-09-06,
+  in eight repositories in one loop, from `git add … && git pull --rebase && git commit`. **Pull
+  first, then stage, then commit**, and read `git show --stat` before pushing: the file count is
+  the only thing that shows this.
 - **Never `git add -A` or `git add .`. Stage the paths you changed, by name.** Several agents share
   these checkouts, and another one is very often part-way through a new package in the same repo.
   `git add -A` sweeps their half-finished files into your commit and pushes them — under your commit
@@ -245,25 +254,33 @@ The repositories are **public**, so every commit is visible the moment it is pus
   all three shipped: importing `$app/state`, importing your own barrel, and a local called `t`
   shadowing the message function. Each module package type-checks its own client — that is the only
   thing that sees them. See `docs/adr/0008-a-module-ships-its-own-screens.md`.
-- **The guard that proved a module's client is actually inside its tarball did not survive the
-  repository split, and nothing replaced it.** `pnpm check:pack` packed each module for real and
-  walked every relative import from the published `./client` entry — necessary because that entry
-  ships as *source*, so an import reaching outside the tarball type-checks, builds, publishes, and
-  breaks only when a consumer installs it. It caught exactly that twice: `../kql/ast.js` unreachable
-  from the packed tree, and a `./client` export in `@kernhq/module-chat` pointing at a file nobody
-  had written. It lived in `KernAIO/modules`, which is archived, and none of the nine module
-  repositories has any packaging guard today (checked 2026-09-06). `check:versions` is named in the
-  same breath in a couple of places and has never existed at all.
-  **Nothing is broken by its absence right now** — every relative import under `src/client` in all
-  six modules that ship a *subset* of `src` resolves inside what their `files` array publishes
-  (checked 2026-09-06; `inventory`, `meet` and `template` ship all of `src` and are safe by
-  construction). That is the state to re-check, not a reason to leave it unguarded: `module-tracker`
-  lists `src/kql` in `files` *because* this broke once already.
-  Two false alarms came out of writing that check, both worth avoiding next time: resolve each
-  import against **its own file's directory**, since `../x` means different things from
-  `src/client/` and `src/client/pages/`; and map a `.js` specifier to the `.ts` on disk, because
-  NodeNext imports are written `../contract.js` against a `files` entry that says `src/contract.ts`.
-  Get either wrong and a clean tree reports dozens of escapes.
+- **`pnpm check:pack` proves a module's client is actually inside its tarball, and it is back.**
+  The `./client` entry ships as *source*, so an import reaching outside the `files` array
+  type-checks, lints, tests, builds and publishes, and fails for the first time in a consumer's
+  install. The check packs the package for real (`npm pack --dry-run --json`), holds every
+  `exports` target to that file list, and walks the relative imports reachable from those entries.
+  It caught exactly that twice in the old monorepo: `../kql/ast.js` unreachable from the packed
+  tree, and a `./client` export in `@kernhq/module-chat` pointing at a file nobody had written.
+  It lived at the root of `KernAIO/modules`, the split dropped it, and it was missing from all nine
+  module repositories until 2026-09-06. Each of them now carries `scripts/check-pack.mjs`, seeded
+  from `module-template` so a new module inherits it, wired as a `check:pack` script and run
+  **after `pnpm build`** in `ci.yml` and again in `publish.yml` — after the build because
+  `./contract` and `./server` point into `dist`, and twice because a red CI run does not stop a
+  publish. All nine passed it unchanged on the day it landed, so it is prevention, not a repair;
+  each one was proved by adding an escaping import and watching it go red on that file and that
+  specifier. `check:versions` is named in the same breath in a couple of places and has never
+  existed at all.
+  Four things make a clean tree report dozens of escapes, and the check gets all four right —
+  worth knowing before touching it. Read the imports with **`ts.preProcessFile(text, true, true)`,
+  not a regex**: it returns static, re-exported, type-only and dynamic `import()` specifiers and
+  ignores the ones inside comments and strings. Resolve each specifier against **its own file's
+  directory**, since `../x` means different things from `src/client/` and `src/client/pages/`.
+  **Map a `.js` specifier onto the `.ts` on disk**, because NodeNext imports are written
+  `../contract.js` against a `files` entry that says `src/contract.ts`. And accept an `exports`
+  target that names a **directory** — `./migrations` everywhere, `./templates` in mail.
+  One ordering matters inside the walk: ask the **disk** before the "is anything packed under this
+  prefix?" fallback. Reversed, a `src/client/pages/index.ts` left out of a `files` array that still
+  publishes its siblings is answered with "something under there is published" and reported as fine.
   The general shape is worth more than the script: **splitting a monorepo silently drops every check
   that lived at its root.** The per-package tests come along because they sit beside the package;
   anything that ran *across* packages has no new home and no owner, and its absence looks exactly
