@@ -338,6 +338,27 @@ The repositories are **public**, so every commit is visible the moment it is pus
   mandatory at every construction site. `.nullish()` is precisely what kept this one additive, and
   it is the thing to reach for when the intent is "new data flowing outward". Ask what a bump costs
   the graph before picking it.
+- **A denormalised subject list cannot express a deny, so any filter built on set overlap fails
+  open.** `core.search` matched `(acl is null or acl && subjects)` — an *additive* overlap — while a
+  deny binding is subtractive, so there is no string a module can put in an acl that removes a
+  subject. Measured 2026-09-06 on a scratch database created from nothing: with a project-scoped
+  deny of `tracker.issue.view` set for one member, `kernel.authz.can` answered false for that
+  principal, permission and scope, `tracker.issues.get` threw FORBIDDEN, and `core.search` returned
+  the issue title and a snippet of the indexed body. No module could repair it from its own side —
+  enumerating the real readers instead of the roles needs a "who holds a binding on this scope"
+  query no core procedure answers, and would write a per-document acl the size of the workspace.
+  A document now declares `authz: { permission, scope }` and core resolves it through `Authz.can`,
+  which is the one place that understands a deny; the general shape is that a rule with an
+  authoritative implementation must be *asked*, never re-derived from a cache of its inputs.
+  **The two filters are not alternatives, and this is the part that surprises.** `can()` at a narrow
+  scope with **no binding there falls through to the caller's workspace-level set and answers
+  true** — so it cannot tell a private project's members from everybody else, and on its own it
+  would be *weaker* than the acl it looks like it replaces. Only the acl knows a readership; only
+  the binding knows an administrator's decision. A hit has to clear both.
+  It also kills the obvious optimisation, which is worth writing down because it reads as free:
+  skipping the check when the workspace holds no deny binding is **wrong**, because a guest's
+  workspace floor has already deleted every project-scoped key, so `can()` correctly refuses a
+  project the guest was never granted in a workspace that has never seen a deny.
 - **A cache that is down must cost latency, never correctness.** `Authz.effective()` awaited the
   cache directly, so an unreachable Valkey threw ioredis' `MaxRetriesPerRequestError` out through
   `can()` and `core.workspaces.myPermissions` answered **500** — while `/api/health` stayed green,
