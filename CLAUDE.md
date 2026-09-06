@@ -56,6 +56,18 @@ The repositories are **public**, so every commit is visible the moment it is pus
   you changed. If you must discard, run `git status --porcelain` first and stop when the file is
   dirty for a reason that is not yours — the same sentence as the `git add -A` rule above, and it is
   the same mistake pointed the other way.
+- **`--autostash` is the right command and it still hands another agent a conflict.** The rule above
+  says to reach for `git -c rebase.autoStash=true pull --rebase` when a checkout is dirty with work
+  that is not yours, and that is still the advice — but understand what it does: it stashes *their*
+  uncommitted work, rebases, and reapplies it, and the reapply can fail. On 2026-09-06 a routine
+  pull in `module-meet` left `UU package.json` with **no conflict markers in the file** (both agents'
+  dependencies were present and the JSON parsed) and the autostash still sitting in `git stash list`.
+  The other agent could not commit anything until it was cleared, and nothing said why.
+  So: after a pull in a repo somebody else is working in, run `git status --porcelain` and look for
+  `UU`, and check `git stash list` for a leftover `autostash`. If you find one, the work is *not*
+  lost — it is in the stash or already merged into the file — so read the file before assuming
+  either. The failure mode to avoid is reaching for `git checkout --` to "clean up", which is the
+  rule two bullets above and would discard exactly what the stash was protecting.
 - **Never ask permission to commit, branch, push, pick a version bump, or cut a release** — all of
   it is yours, every time, and asking hands the work back. Release when the work is actually finished
   and green, then report what shipped; the bar for "finished" does not move because nobody is
