@@ -692,7 +692,24 @@ jobs:
           D=$(ls -1d "$I"/backups/[0-9]*-[0-9]*/ | head -1); D="${D%/}"
           [ -s "$D/database.dump" ] || { echo "::error::no dump in $D"; ls -l "$D"; exit 1; }
           [ -f "$D/RESTORE.txt" ] || { echo "::error::no RESTORE.txt in $D"; ls -l "$D"; exit 1; }
-          echo "✔ backup published $(basename "$D")"
+
+          # Two opposite requirements on the same directory, and the blanket `chmod -R go-rwx`
+          # satisfied only the first. .env holds every secret this instance has and must stay
+          # private; postgres-init/ is read by the *Postgres container* on the restored host, which
+          # runs as uid 999, so a file that chmod left at 0600 makes its entrypoint exit 1 with
+          # "Permission denied" and the restored database never starts.
+          mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+          case "$(mode "$D/.env")" in
+            *0) ;;
+            *) echo "::error::.env in the backup is $(mode "$D/.env") — another user on this host can read every secret"; exit 1 ;;
+          esac
+          for f in "$D"/postgres-init/*.sql; do
+            case "$(mode "$f")" in
+              *[4567]) ;;
+              *) echo "::error::$f is $(mode "$f") — the Postgres container on the restored host cannot read it"; exit 1 ;;
+            esac
+          done
+          echo "✔ backup published $(basename "$D"): .env private, postgres-init readable"
 
           # ------------------------------------------------ follow RESTORE.txt
 
