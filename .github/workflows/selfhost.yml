@@ -699,16 +699,30 @@ jobs:
           # runs as uid 999, so a file that chmod left at 0600 makes its entrypoint exit 1 with
           # "Permission denied" and the restored database never starts.
           mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+          # Both trailing digits, not one. `*0)` tested only the world bit, so 0640 and 0660 passed
+          # while the message beside them said "another user on this host can read every secret" —
+          # which is precisely what group-readable means. Measured: with the script's `go-rwx`
+          # changed to `o-rwx`, .env was published `-rw-r-----` and this whole drill went green
+          # printing "✔ .env private". Nothing is broken today, because the shipped script does
+          # `go-rwx` and produces 0600; the point is that a regression to group-readable is the one
+          # thing this assertion exists to catch and it was the one thing it could not see.
           case "$(mode "$D/.env")" in
-            *0) ;;
+            *00) ;;
             *) echo "::error::.env in the backup is $(mode "$D/.env") — another user on this host can read every secret"; exit 1 ;;
           esac
           # The directory as well as the files: at 0700 the container cannot even list the mount,
           # which is what run 34039806831 showed — "ls: cannot open directory
           # '/docker-entrypoint-initdb.d/': Permission denied", on a loop, because it restarts.
+          # A directory needs r AND x: 0704 and 0744 pass a read-only test and still cannot be
+          # traversed, so the container lists the names and cannot open the files — the same failure
+          # this assertion was written for, one step further in. `chmod go+rX` never produces that,
+          # so it is latent rather than live, but the test should not accept a mode the product
+          # would be broken by.
           for f in "$D/postgres-init" "$D"/postgres-init/*.sql; do
+            want='*[4567]'; [ -d "$f" ] && want='*[57]'
+            # shellcheck disable=SC2254 # the pattern is chosen above, deliberately unquoted
             case "$(mode "$f")" in
-              *[4567]) ;;
+              $want) ;;
               *) echo "::error::$f is $(mode "$f") — the Postgres container on the restored host cannot read it"; exit 1 ;;
             esac
           done
@@ -766,7 +780,8 @@ jobs:
 
           # Step 1 is done here rather than run, and step 5 is not exercised at all. Both are named
           # so the coverage this claims is the coverage it has:
-          #   1  its one command downloads install.sh, which the same step then says not to run.
+          #   1  it only fetches the maintenance scripts into the new directory; the files it tells
+          #      you to copy are already here, put there by the backup this drill just took.
           #   5  `docker compose up -d` needs this release's five service images out of GHCR.
           # Everything between them — the database and the object storage — is run for real.
           cp "$D/.env" "$D/docker-compose.yml" "$D/Caddyfile" "$D/livekit.yaml" "$N/"
