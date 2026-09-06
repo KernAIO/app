@@ -843,6 +843,27 @@ pnpm dev       # every service with hot reload
   good snapshot sat beside it: `install.sh` prints that command as the way out of a bad upgrade, so
   the documented recovery path was broken by the change that made upgrades safer. Select on the
   property you actually need — here a `from-version` file — rather than on a naming convention.
+- **Nothing had ever restored a Kern backup, and a procedure is only tested by executing the text
+  it ships.** The existing check proved a backup is never *published* half-written and said nothing
+  about whether what it wrote could be read back. So the drill in `selfhost.yml` reads the commands
+  out of the `RESTORE.txt` a backup has just written and runs those — a copy of them in the test
+  would drift from the copy an operator reads, which is the whole failure mode. Walking it on
+  2026-09-06 found three defects that each stop a restore dead, and the first was invisible to
+  every kind of review: step 4 mirrors the files into a bucket nothing has created, because step 2
+  starts `postgres minio` and `minio-init` is the only thing that ever runs `mc mb` — so every
+  uploaded file in the instance was unrecoverable by following the page. The other two are the
+  permission pair in the bullet above.
+  Three things worth carrying to the next procedure. **A claim about another script is a claim to
+  verify**: this page said not to run `install.sh` because "it would generate new secrets", and
+  `install.sh` keeps an existing `.env` untouched — the real reason is that it ends by starting
+  every service, and step 2 starts two on purpose. **What you diff matters as much as that it
+  ran**: a dump that carried every row and lost the policies restores an instance in which every
+  workspace reads every other one, and a row count cannot see that, so ownership, forced-RLS flags,
+  policies, indexes, constraints, routines, types and sequence positions are all in the census
+  beside a per-relation row hash. And **`selfhost/docker-compose.yml` sets `name: kern`**, so an
+  instance and the host it is being restored onto are the *same* Compose project unless
+  `COMPOSE_PROJECT_NAME` says otherwise — without it the restore target overwrites the database it
+  just dumped, and two people drilling at once fight over one set of containers.
 - **A `Type=oneshot` unit's exit code is something an operator reads every night.** `kern-upgrade.sh`
   recorded the auto-update outcome *before* the stack-file verdict and then exited 1 on it, so
   Admin → Updates showed the release applied while `kern-auto-update.service` showed failed, for an

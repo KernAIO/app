@@ -230,9 +230,16 @@ To restore onto an empty host
 1. Install Docker, then copy *everything* in this directory into a new directory on the new
    host and work from there — .env, docker-compose.yml, Caddyfile, livekit.yaml and
    postgres-init/, and database.dump and files/ as well: steps 3 and 4 read those two from
-   whichever directory you are standing in. Then download the scripts:
-       curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
-   Do not run install.sh: it would generate new secrets. You already have them in .env.
+   whichever directory you are standing in. Steps 2 to 5 need nothing but Docker and what you
+   have just copied. Fetch the maintenance scripts too, so the restored host can back itself
+   up and take upgrades afterwards:
+       curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/kern-backup.sh -o kern-backup.sh
+       curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/kern-upgrade.sh -o kern-upgrade.sh
+       curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/kern-rollback.sh -o kern-rollback.sh
+       chmod +x kern-backup.sh kern-upgrade.sh kern-rollback.sh
+   Not install.sh. It leaves an existing .env alone, so the secrets you copied are safe from
+   it, but it ends by starting every service — and step 2 starts only postgres and minio
+   precisely so that nothing migrates before the data is back.
 
 2. Start only the infrastructure, so nothing migrates before the data is back:
        docker compose up -d postgres minio
