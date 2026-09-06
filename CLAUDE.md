@@ -362,10 +362,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - **The module template is its own repository.** `KernAIO/module-template` is Apache-2.0 and
   published as `@kernhq/module-template`; it was a package inside the AGPL `modules` repo, which
   meant the only way to get the permissive starting point was to clone six copyleft modules with it.
-  `pnpm new-module` fetches the published package rather than keeping a second copy, so `pnpm
-  new-module` and `npx degit KernAIO/module-template` produce the same module by construction. It is
-  cloned into `repos/` and linked, so a platform change that breaks the template breaks it here
-  first — which is what `kern-platform`'s checklist depends on.
+  `npx degit KernAIO/module-template` is how an author starts one, and the published tarball carries
+  the same files. It is cloned into `repos/` and linked, so a platform change that breaks the
+  template breaks it here first — which is what `kern-platform`'s checklist depends on.
+  **This bullet described a `pnpm new-module` script until 2026-09-06 and there has never been
+  one** — not in the umbrella's `package.json`, not in `scripts/`. It said the script fetched the
+  published package "so `pnpm new-module` and `npx degit` produce the same module by construction",
+  which is a mechanism, an equivalence and a guarantee, all resting on a command that does not
+  exist. It was found by an agent following this file to check the template, which is the only way
+  a claim like this ever gets found: nobody re-runs the commands in a document they trust. If you
+  add the script, this is where it goes back.
 - **The realtime socket exists at `welcome`, not at `onopen`.** A client sends `hello` and its
   `sub` back to back, so both frames arrive in one read and are dispatched while the gateway is
   still awaiting core for the principal — and a gateway that closes anything arriving before
