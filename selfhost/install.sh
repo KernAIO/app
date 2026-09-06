@@ -116,6 +116,36 @@ gen() { openssl rand -hex 32; }
 # ---------------------------------------------------------------- files
 
 mkdir -p "$DIR/postgres-init" "$DIR/systemd" && cd "$DIR"
+
+# `docker-compose.yml` sets `name: kern`, a constant, so the Compose project — and therefore every
+# named volume, `kern_pgdata` among them — is the same for EVERY instance directory on this host.
+# Installing a second Kern beside a first is not a second Kern: the two share one database volume
+# and one object store. Measured 2026-09-06 with two directories, each with its own `.env`: the
+# second instance read the first instance's rows, and `docker compose down -v` from either one
+# destroyed the other's data.
+#
+# It does not silently succeed, which is the one mercy — a fresh install generates new secrets, so
+# `db-init` dies on "password authentication failed for user kern" and every service that waits on
+# it never starts. But the operator is then looking at a password error while their first instance's
+# data sits one `down -v` from being deleted, and nothing anywhere says why.
+#
+# So refuse, here, before anything is written. The project name itself is deliberately NOT changed:
+# every instance already running has its containers and volumes under `kern`, and deriving the name
+# from the directory would orphan all of it at the next upgrade.
+if [ -f .env ]; then
+  : # an existing instance in this directory — this is a re-run, which is supported
+elif command -v docker >/dev/null 2>&1 && docker volume inspect kern_pgdata >/dev/null 2>&1; then
+  fail "This host already has a Kern database volume (kern_pgdata), and every instance on a host
+    shares it — the compose project is always named \"kern\". Installing here would attach this
+    instance to the existing database, and \"docker compose down -v\" from either directory would
+    destroy both.
+
+    If you meant to reinstall, run this from the directory that holds the existing .env.
+    If you meant to start over, back up first (./kern-backup.sh), then remove the old volumes:
+        docker compose down -v
+    If you genuinely want two instances on one host, they need separate Compose projects; that is
+    not something this installer supports today."
+fi
 for f in docker-compose.yml Caddyfile livekit.yaml .env.example postgres-init/01-extensions.sql \
          kern-upgrade.sh kern-rollback.sh kern-backup.sh \
          systemd/kern-auto-update.service systemd/kern-auto-update.timer \

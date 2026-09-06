@@ -887,6 +887,21 @@ pnpm dev       # every service with hot reload
   `chat`, `mail` and `collab` all wait on `condition: service_healthy` and therefore never started.
   A stack that looks like it booted with four services missing is this. The image probes
   `127.0.0.1` with `node -e "fetch(...)"`; let it.
+- **Every instance on a host is the same Compose project, so a second install shares the first
+  one's volumes.** `selfhost/docker-compose.yml` sets `name: kern` as a constant, and Compose
+  prefixes named volumes with the project — so `kern_pgdata` and `kern_miniodata` belong to the
+  *host*, not to the directory. Measured 2026-09-06 with two directories each holding its own
+  `.env`: the second instance read the first instance's rows, and `docker compose down -v` from
+  either one destroyed the other's data. A genuine second `install.sh` does not silently share, but
+  only by luck — it generates new secrets, so `db-init` dies on "password authentication failed for
+  user kern" and every service waiting on it never starts, which is a misleading error sitting one
+  `down -v` away from deleting the first instance. `install.sh` refuses now when `kern_pgdata`
+  exists and the directory has no `.env`.
+  **The project name itself is deliberately not changed**, and that is the whole decision: deriving
+  it from the directory would be correct for a new install and would orphan the containers and
+  volumes of every instance already running, at their next upgrade. `selfhost/coolify/` and
+  `cloud/` carry no `name:` at all and do not have the property, which is also a difference
+  `check-selfhost-drift.py` does not look at — it compares keys and routes, not project identity.
 - **There are now three copies of the stack, and `cloud/` is the third.** `selfhost/` is the bare
   host, `selfhost/coolify/` is what a customer pastes into their own Coolify, and `cloud/` is the
   instance we run at app.kernaio.com. It differs in exactly one thing: `S3_PUBLIC_ENDPOINT` points
