@@ -809,6 +809,32 @@ pnpm dev       # every service with hot reload
   note that a backgrounded run would pass it for the wrong reason, because an asynchronous command
   in a non-interactive shell inherits `SIGINT` ignored and a script cannot trap what was ignored on
   entry.
+- **Nothing had ever restored a backup, and following `RESTORE.txt` failed three ways in one pass.**
+  The signal drill above proves a backup is never published half-written and says nothing about
+  whether what it wrote can be restored; on 2026-09-06 the file's own commands were run against real
+  containers for the first time. Step 4 mirrored the files into a bucket nothing had created — step
+  2 starts `postgres minio`, and `minio-init` is the only thing that ever runs `mc mb`.
+  `chmod -R go-rwx "$WORK"` failed with "Operation not permitted", because the mirror container
+  wrote as root: `kern-backup.sh` died outright for any operator who is not root, leaving a
+  `.partial` its own trap could not remove either. And that same chmod left `postgres-init/` at
+  0700/0600, so the restored host's Postgres container — uid 999 — could not list its own
+  `docker-entrypoint-initdb.d`, logged "Permission denied" and restarted for ever, which is step 3
+  reporting postgres unhealthy. **All three are invisible on a Mac**: Docker Desktop presents a bind
+  mount to the container as its own user, so every local run of that script has been
+  root-equivalent and its permissions had never been exercised anywhere. A Linux runner is the first
+  thing that contradicted it, and file modes are the class to suspect whenever a container reads
+  something a script wrote.
+  Two things about the drill are worth more than the fixes. It executes the commands **read out of**
+  the RESTORE.txt a backup has just written, because a procedure a test transcribes can rot in the
+  file while CI stays green — and it asserts that all five numbered steps yielded a command, since
+  the first version silently extracted none for the two whose prose wraps onto a second line and
+  passed anyway. And it diffs a **census**, not row counts: ownership, the forced-RLS flags,
+  policies, indexes, constraints, routines, types, sequence positions and a per-relation row hash,
+  because a dump that carried every row and lost the policies restores an instance in which every
+  workspace reads every other one. One trap in building it: `docker-compose.yml` sets `name: kern`,
+  so an instance and the host it is restored onto are the same Compose project unless
+  `COMPOSE_PROJECT_NAME` says otherwise — without it the restore overwrites the database it has
+  just dumped, and two agents running a drill at once fight over one set of containers.
 - **A new kind of entry in a shared directory means fixing every reader of it, not the one you were
   looking at.** The `stack-<stamp>/` diffs an upgrade leaves in `snapshots/` were kept out of the
   snapshot *prune* and not out of `kern-rollback.sh`'s auto-select, which took the newest
