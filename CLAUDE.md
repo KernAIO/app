@@ -231,6 +231,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   had written. It lived in `KernAIO/modules`, which is archived, and none of the nine module
   repositories has any packaging guard today (checked 2026-09-06). `check:versions` is named in the
   same breath in a couple of places and has never existed at all.
+  **Nothing is broken by its absence right now** — every relative import under `src/client` in all
+  six modules that ship a *subset* of `src` resolves inside what their `files` array publishes
+  (checked 2026-09-06; `inventory`, `meet` and `template` ship all of `src` and are safe by
+  construction). That is the state to re-check, not a reason to leave it unguarded: `module-tracker`
+  lists `src/kql` in `files` *because* this broke once already.
+  Two false alarms came out of writing that check, both worth avoiding next time: resolve each
+  import against **its own file's directory**, since `../x` means different things from
+  `src/client/` and `src/client/pages/`; and map a `.js` specifier to the `.ts` on disk, because
+  NodeNext imports are written `../contract.js` against a `files` entry that says `src/contract.ts`.
+  Get either wrong and a clean tree reports dozens of escapes.
   The general shape is worth more than the script: **splitting a monorepo silently drops every check
   that lived at its root.** The per-package tests come along because they sit beside the package;
   anything that ran *across* packages has no new home and no owner, and its absence looks exactly
