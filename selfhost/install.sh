@@ -253,7 +253,7 @@ if command -v systemctl >/dev/null && [ -d "$HOME/.config" ]; then
   mkdir -p "$HOME/.config/systemd/user"
 
   # The update timer only ever asks the instance whether it may upgrade; nothing happens until an
-  # admin turns automatic updates on in Admin -> Updates. Installing it now saves finding out later
+  # admin turns automatic updates on in Settings -> Instance -> Updates. Installing it now saves finding out later
   # that the switch in the interface had nothing behind it.
   if yes_no "Install the update timer, so Kern can update itself if you switch that on later? [Y/n] " y; then
     cp systemd/kern-auto-update.service systemd/kern-auto-update.timer "$HOME/.config/systemd/user/"

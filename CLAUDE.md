@@ -748,6 +748,24 @@ pnpm dev       # every service with hot reload
   large upload dies as a 413 the browser reports as a network error. So MinIO gets `files.` on a
   DNS-only record and shell keeps the CDN. `scripts/check-selfhost-drift.py` checks all three:
   a copy may differ in a variable's *value*, never in the set of keys or the Caddy routes.
+  `PUBLIC_KERN_HOSTING` is the second such difference, added 2026-09-06: `cloud` on `cloud/`, a bare
+  pass-through key on both self-host copies.
+- **Who the instance admin *is* differs between the two distributions, so the instance settings sit
+  in two different places.** On a self-hosted install the instance admin is the customer — sign-up
+  policy, users, updates and the module instance pages are their settings, and they live in
+  **Settings → Instance**, above the module groups because Updates is the row somebody comes to
+  Settings for on the day a release lands. On Kern Cloud the instance admin is us, so the same pages
+  are an operator's console at `/<ws>/admin` and nothing in a customer's settings hints they exist.
+  `PUBLIC_KERN_HOSTING=cloud` picks which; the page bodies live once in shell's
+  `$lib/components/instance/` and each route tree is a three-line wrapper, so there is no second
+  copy to drift. Three things worth knowing before touching it: **the other address forwards
+  permanently, not transitionally** — core writes `/admin/updates` into notification rows and those
+  rows are on other people's servers, so core stays hosting-blind and keeps emitting that URL;
+  **it decides a sidebar and nothing else**, because `requireInstanceAdmin` in core is what gates
+  every one of those procedures, on every call; and **a module still declares an instance page as an
+  id, never a path**, which `routing.ts` resolves against the literal `/admin/<mod>/<id>` — now an
+  internal name rather than a URL. Verified on 2026-09-06 by running the shell both ways and
+  navigating each address in each mode.
 - **Coolify deploys `cloud/docker-compose.yml` from `main`, so a compose change reaches the cloud at
   the next rollout, having run nowhere first.** `selfhost.yml` used to parse the file and stop.
   On 2026-09-02 an ownership-handover `db-init` landed on `main` in the afternoon and met the cloud

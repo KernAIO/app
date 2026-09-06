@@ -161,6 +161,12 @@ services:
       # google,github,microsoft. The shell cannot ask core what is configured, so this list is what
       # decides whether a button exists; the credentials on core decide whether pressing it works.
       PUBLIC_AUTH_PROVIDERS:
+      # This is the cloud, so the instance admin is us rather than the customer: the settings for
+      # the whole installation are an operator console at /admin, and nothing in a customer's own
+      # settings hints that they exist. A self-hosted instance leaves this unset and gets them in
+      # Settings → Instance instead. It decides a sidebar, never access — every one of those pages
+      # is gated on the instance-admin flag, by core, on every call.
+      PUBLIC_KERN_HOSTING: cloud
     depends_on: [core]
 
   core:

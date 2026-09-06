@@ -35,7 +35,7 @@ unlimited. That is the default path, not an error path, and it cannot throw.
 
 **3. Plan *values* are data. Plan *keys* are not.**
 
-An instance admin creates plans in Admin → Plans, sets what each costs and what it allows, and
+An instance admin creates plans in Settings → Instance → Plans, sets what each costs and what it allows, and
 publishes. `GET /api/billing/plans/public` serves the published ones unauthenticated, and the
 marketing site generates its pricing page from that endpoint, so a price is edited once and is true
 both on the page and on the invoice.

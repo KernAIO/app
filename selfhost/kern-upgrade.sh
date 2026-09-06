@@ -9,7 +9,7 @@
 #                                    forward and stop, without touching the running stack
 #
 # `--auto` is what the timer runs. It asks Kern whether it may proceed — the policy, the window and
-# the settling period all live in the instance, set by an admin in Admin -> Updates — and does
+# the settling period all live in the instance, set by an admin in Settings -> Instance -> Updates — and does
 # nothing at all unless the answer is yes. That way the panel and the job at 03:00 cannot disagree.
 #
 # Nothing here is clever. It refuses to start when the instance is not in a state to be upgraded,
@@ -489,7 +489,7 @@ if [ -d "$SNAPSHOT_DIR" ]; then
 fi
 
 # What the panel is told. One helper so the two callers cannot drift: whatever an unattended run
-# reports here is what Admin -> Updates shows, and it has to be the same verdict the shell exits on.
+# reports here is what Settings -> Instance -> Updates shows, and it has to be the same verdict the shell exits on.
 record_attempt() { # record_attempt ok|failed [message]
   compose exec -T core node dist/updates-cli.js record "$TARGET" "$@" >/dev/null 2>&1 || true
 }
@@ -596,7 +596,7 @@ fi
 # the job is the operator reading this line.
 #
 # The outcome is recorded after this verdict, never before it. Recorded above and exited on below,
-# the two disagreed: Admin -> Updates said the release was applied while systemd marked
+# the two disagreed: Settings -> Instance -> Updates said the release was applied while systemd marked
 # kern-auto-update.service failed for the same run, because the unit is Type=oneshot and reads any
 # non-zero status as a failure. An operator seeing a red unit every night for an upgrade that
 # worked stops reading them, which is how the night one genuinely fails goes unnoticed.

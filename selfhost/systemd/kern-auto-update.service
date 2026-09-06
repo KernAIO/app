@@ -1,7 +1,7 @@
 [Unit]
 # Runs kern-upgrade.sh --auto, which asks the instance whether it may upgrade and does nothing
 # unless the answer is yes. The policy, the window and the settling period are set by an admin in
-# Admin -> Updates, so this unit needs no configuration of its own.
+# Settings -> Instance -> Updates, so this unit needs no configuration of its own.
 Description=Kern automatic update
 After=docker.service
 Requires=docker.service
