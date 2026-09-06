@@ -212,6 +212,24 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `KERN_IMAGE_SHELL` / `KERN_IMAGE_CORE` in `.env` point a stack at the pair. Locally the same
   generator wires a module linked under `repos/`; `core` reads its `dist/`, so build the module
   first. Verified by building both images with `@kernhq/module-template@0.2.9` inside.
+- **A query inside `withWorkspace` still writes `workspace_id` in its predicate.** The transaction is
+  bound, so row-level security scopes it on a correctly-configured instance — and on one whose owner
+  can bypass a policy it does not, which is every developer database and any external Postgres set up
+  by hand. All five demo seeders (`ServerModule.demo`, added 2026-09-06) checked "is this workspace
+  empty?" with an unfiltered `select … limit 1`, so from the second workspace onwards each one saw
+  the *previous* workspace's rows, skipped, and logged "workspace not empty" while the workspace it
+  was asked about held nothing. Nothing failed and no test caught it: every seeder's own test used one
+  workspace. Seeding a **second** workspace in the same database is the whole reproduction, and it is
+  now in each of those tests. The general shape is the one `db.rls.test.ts` already records from the
+  other direction — a control whose failure mode is "nothing happens" needs the thing it protects
+  written out, not inferred from configuration.
+- **A service loads a module's `dist`, so an edit to a module's server is invisible until it is
+  built.** `./client` ships source and is live once linked; `./server` does not, and the two behave
+  oppositely — the same trap `@kernhq/ui` has. A demo seed run against a linked-but-unbuilt
+  `module-chat` produced no chat content and no error at all, because the module the service loaded
+  had no `demo` to subscribe; a stale `module-tracker` dist meanwhile failed on a defect that had
+  already been fixed in the source. `pnpm build` in the module before you conclude anything about a
+  change to its server.
 - **A module ships its own screens, and `shell` ships only the shell.** Contract, server, pages,
   widgets, strings and manifest are one package; deleting it removes the feature completely. The
   wiring outside it is two lines — `featureModules` in a host service, `registerModule` in shell's
