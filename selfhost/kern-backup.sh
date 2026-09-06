@@ -204,8 +204,8 @@ Contents
 
 To restore onto an empty host
 
-1. Install Docker, then put this directory's .env, docker-compose.yml, Caddyfile and
-   livekit.yaml into a new directory, and download the scripts:
+1. Install Docker, then put this directory's .env, docker-compose.yml, Caddyfile,
+   livekit.yaml and postgres-init/ into a new directory, and download the scripts:
        curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
    Do not run install.sh: it would generate new secrets. You already have them in .env.
 
@@ -217,9 +217,11 @@ To restore onto an empty host
        docker compose exec -T postgres pg_restore -U $(env_value POSTGRES_USER) \\
            -d $(env_value POSTGRES_DB) --clean --if-exists < database.dump
 
-4. Restore the files:
+4. Restore the files. Step 2 started MinIO and not minio-init, so nothing has created the
+   bucket yet and \`mc mirror\` will not create it for you:
        docker compose run --rm --no-deps -v "\$PWD/files:/backup" --entrypoint /bin/sh minio-init \\
            -c "mc alias set dst '$S3_ENDPOINT' '<S3_ACCESS_KEY>' '<S3_SECRET_KEY>' &&
+               mc mb -p dst/$S3_BUCKET &&
                mc mirror --overwrite /backup dst/$S3_BUCKET"
    The keys are in .env.
 
