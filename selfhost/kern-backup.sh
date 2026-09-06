@@ -214,8 +214,10 @@ Contents
 
 To restore onto an empty host
 
-1. Install Docker, then put this directory's .env, docker-compose.yml, Caddyfile,
-   livekit.yaml and postgres-init/ into a new directory, and download the scripts:
+1. Install Docker, then copy *everything* in this directory into a new directory on the new
+   host and work from there — .env, docker-compose.yml, Caddyfile, livekit.yaml and
+   postgres-init/, and database.dump and files/ as well: steps 3 and 4 read those two from
+   whichever directory you are standing in. Then download the scripts:
        curl -fsSL https://raw.githubusercontent.com/KernAIO/app/main/selfhost/install.sh -o install.sh
    Do not run install.sh: it would generate new secrets. You already have them in .env.
 
@@ -233,10 +235,14 @@ To restore onto an empty host
            -c "mc alias set dst '$S3_ENDPOINT' '<S3_ACCESS_KEY>' '<S3_SECRET_KEY>' &&
                mc mb -p dst/$S3_BUCKET &&
                mc mirror --overwrite /backup dst/$S3_BUCKET"
-   The keys are in .env.
+   The keys are in .env. \`mc\` prints one line per object it copies; if it prints none, then
+   /backup was empty. Docker creates a missing bind-mount source as an empty directory
+   rather than refusing, so a files/ that is not beside you mirrors nothing and still
+   reports success.
 
 5. Start everything:
        docker compose up -d
+   \`docker compose ps\` shows every service healthy once they have all started.
 
 The database and the files were captured a few seconds apart, not atomically. A file uploaded
 during the backup may be in one and not the other.
