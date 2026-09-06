@@ -45,7 +45,14 @@ checkouts() {
 expected() {
   local inv="$UMBRELLA/.claude/skills/kern-repos/references/inventory.md"
   [ -f "$inv" ] || return 0
-  grep -oE '^\| \[`[a-z0-9._-]+`\]' "$inv" | tr -d '|[]` ' | sort -u
+  # A row the inventory itself marks `_not cloned here_` is not missing — it is deliberately
+  # absent. `modules` is the standing case: archived since 2026-08-25, every module has had its own
+  # repository since, and `repos.mjs` already lists it under OUTSIDE with that reason. Reporting it
+  # anyway made `pnpm status` exit 2 on a completely clean workspace and print "run pnpm setup" for
+  # a repository nobody should clone. A check that cries wolf on every single run is a check people
+  # learn to skim, which is the opposite of what this one is for.
+  grep -vF '_not cloned here_' "$inv" \
+    | grep -oE '^\| \[`[a-z0-9._-]+`\]' | tr -d '|[]` ' | sort -u
 }
 
 report() {
