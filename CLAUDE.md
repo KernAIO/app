@@ -8,9 +8,8 @@ The repositories are **public**, so every commit is visible the moment it is pus
 - Write READMEs, docs, and issue/PR text for external contributors, not for ourselves.
 - Keep commit history clean and meaningful — it is part of what people judge the project by.
 - Every repo carries LICENSE, CLA.md, CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md.
-- **Two licences, split at the framework boundary.** The `kernel` repo and `modules`'
-  `workflow` are **Apache-2.0**, as is `KernAIO/module-template` in its own repository, so anyone can
-  write a closed module; the product —
+- **Two licences, split at the framework boundary.** The `kernel` repo (which now holds `workflow`)
+  and `KernAIO/module-template` are **Apache-2.0** so anyone can write a closed module; the product —
   `shell`, `core`, `chat`, `mail`, `collab`, `docs`, this umbrella, the first-party modules — is
   **AGPL-3.0-only**. A new package inherits its repo's licence unless it is something a third-party
   module must import, and then it is Apache-2.0 with its own LICENSE file. Apache-2.0 packages take
@@ -117,7 +116,7 @@ The repositories are **public**, so every commit is visible the moment it is pus
   generator wrote (it is the first current one), cut the SQL down to what is actually new, guard
   it, and run `scripts/check-snapshot-drift.mjs` — that check is the only thing that proves the
   snapshot and the database describe the same thing, and every module that hand-writes a migration
-  should carry it (`module-hr` and `module-inventory` do).
+  should carry it (`module-hr`, `module-inventory` and `module-meet` run it in `lint`).
 - **Idempotent is not the same as effective, and the second one has no guard.** A replayed
   `create table if not exists` reports success and changes nothing, so a *rewritten* migration
   silently leaves an existing schema exactly as it was — the boot failure is gone and the change
@@ -169,7 +168,7 @@ The repositories are **public**, so every commit is visible the moment it is pus
   `0009_beyond_cap_minutes` sat a day below `0007` and would never have reached a deployed instance;
   `module-hr`'s `src/server/journal.test.ts` is the guard, and is worth copying into any module that
   hand-edits a journal.
-- Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `modules` repo `packages/_template`.
+- Modules own their data: Postgres schema `mod_<id>`, `workspace_id` + RLS on every tenant table, cross-module access only via `kernel.call()` and events. See `KernAIO/module-template`.
 - **"Every first-party module is guarded" was true of five.** `chat` and `mail` had no
   `migrations.test.ts` at all, and both folders threw on replay — eleven bare `CREATE TABLE`s in
   chat, seven statements in mail — while the sentence above this one said otherwise. And `mod_mail`
@@ -364,19 +363,21 @@ The repositories are **public**, so every commit is visible the moment it is pus
   A capability nothing checks `requiresCapability` for, and a permission key no procedure asks
   about, fail the same way and for the same reason: a switchboard full of switches that change
   nothing teaches an administrator that the switchboard does not mean anything. Declare each of the
-  three in the change that puts something behind it — `module-inventory` declares one capability,
-  `core`, and adds none of the rest until something sits behind it.
+  three in the change that puts something behind it — `module-inventory` declares three
+  capabilities, `core`, `repairs` and `attachments`, and adds none of the rest until something sits
+  behind it.
   See `docs/adr/0003-billing-entitlements-and-cloud.md`.
 - **Every module is its own repository, and `KernAIO/modules` is archived.** `module-tracker`,
-  `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing`, `module-inventory`
-  and `module-template` each hold one package with its own history, CI and release. The first-party
-  seven are the ones Kern ships with and are meant to be read as much as run — a reference
+  `module-chat`, `module-quire`, `module-hr`, `module-mail`, `module-billing`, `module-inventory`,
+  `module-meet` and `module-template` each hold one package with its own history, CI and release.
+  The first-party seven are the ones Kern ships with and are meant to be read as much as run — a
+  reference
   implementation that lives somewhere structurally special is not a reference, so they have the same
   shape as one written outside this organisation. `@kernhq/workflow` was never a module
   (Apache-2.0, depends only on zod) and moved into the `kernel` repo with the rest of the framework.
 - **Range drift is now checked, because there is no single place left to fix it.** `check-ranges.mjs`
-  runs in the `lint` of every repository that depends on `@kernhq/*` — all fourteen; it ran in eight
-  of them until 2026-08-26, and `chat`, `collab`, `core`, `mail`, `shell` and `module-template` were
+  runs in the `lint` of every repository that depends on `@kernhq/*`, which is every repository here
+  except `docs`; it ran in eight of them until 2026-08-26, and `chat`, `collab`, `core`, `mail`, `shell` and `module-template` were
   the six where a range could drift unseen. It asks four questions, and they fail in four different
   places: can the range reach what is published (a caret on 0.x never crosses a minor, so `^0.7.0`
   stops reaching the framework the moment it becomes 0.8.0 — invisible locally, because the umbrella
@@ -468,7 +469,7 @@ Mailpit for `mail`. Things learned the hard way:
   `repos/<name>` walks up and attaches to the umbrella; `--ignore-workspace` skips `packages/*` and
   cheerfully reports nothing to do. Clone the repo somewhere outside the workspace and run
   `pnpm install --lockfile-only` there, then copy the lockfile back.
-- **Every repository that builds something commits a lockfile: `kernel`, all eight `module-*`, and
+- **Every repository that builds something commits a lockfile: `kernel`, every `module-*`, and
   since 2026-09-02 the five services too.** `docs` is the one without. CI is
   `if [ -f pnpm-lock.yaml ]; then --frozen-lockfile; else pnpm install; fi`, so a repo with one
   fails at *install* the moment its lockfile drifts — before a single test. The services got theirs
@@ -618,8 +619,8 @@ pnpm dev       # every service with hot reload
   or in `OUTSIDE` with the reason, so a new one is a decision somebody records rather than an
   omission nobody sees. A hardcoded list in a `package.json` script is the same defect — that is
   where the eight module directories `check:messages` covered used to live.
-- **`pnpm status` is the only honest answer to "is everything committed?"** Ten repositories means ten
-  answers, and `website` is checked out *beside* the umbrella rather than inside `repos/`, so a loop
+- **`pnpm status` is the only honest answer to "is everything committed?"** Every checkout is its own
+  answer, and `website` is checked out *beside* the umbrella rather than inside `repos/`, so a loop
   over `repos/*` misses it — silently, which is the worst way to miss something. The script finds
   every checkout, lists every path (never a truncated `head`), and reports unpushed commits, stashes,
   a detached HEAD and any repository the organisation has that is not cloned here. It **exits 1** when
