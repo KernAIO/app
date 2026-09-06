@@ -422,6 +422,385 @@ jobs:
           echo "✔ the dump-less copy was named and skipped, and the real backup kept its place"
           rm -rf "$W"
 
+      # The step above proves a backup is never published half-written. It says nothing about
+      # whether the thing it wrote can be restored, and until 2026-09-06 nothing anywhere did:
+      # kern-backup.sh writes a RESTORE.txt telling an operator how, and nobody had followed it.
+      #
+      # This runs the whole round trip against real containers — seed an instance, take a backup
+      # with the script exactly as it ships, then restore onto a second stack by executing the
+      # commands **read out of the RESTORE.txt that backup wrote**, and diff a census of the two
+      # databases. Reading the commands rather than retyping them is the point: a procedure this
+      # workflow transcribes is a procedure that can rot in the file while CI stays green.
+      #
+      # It found one defect on the first run. Step 4 mirrored the files back into a bucket that
+      # does not exist — step 2 starts `postgres minio` and not `minio-init`, which is the only
+      # thing that ever creates the bucket, and `mc mirror` does not create one. Following the
+      # file on an empty host lost every uploaded file in the instance, loudly but with no way
+      # forward. `mc mb -p` is in step 4 now.
+      - name: A backup restores, and the restored database is the same database
+        run: |
+          set -euo pipefail
+          W=$(mktemp -d); I="$W/instance"; N="$W/newhost"; mkdir -p "$I" "$N"
+
+          # The two stacks must be different Compose projects. selfhost/docker-compose.yml sets
+          # `name: kern`, so an instance and the host it is restored onto are the same project by
+          # default — the "new host" would find the instance's containers already up and the
+          # restore would overwrite the database it had just dumped. COMPOSE_PROJECT_NAME
+          # overrides the file's `name:`, and it is an environment variable rather than an edit,
+          # so kern-backup.sh still runs exactly as it ships.
+          inst() { ( cd "$I" && COMPOSE_PROJECT_NAME=kern-drill-src docker compose "$@" ); }
+          newh() { ( cd "$N" && COMPOSE_PROJECT_NAME=kern-drill-dst docker compose "$@" ); }
+          cleanup() {
+            inst down -v >/dev/null 2>&1 || true
+            newh down -v >/dev/null 2>&1 || true
+            return 0
+          }
+          trap cleanup EXIT
+
+          # ------------------------------------------------ an instance with something to lose
+
+          cp selfhost/docker-compose.yml selfhost/Caddyfile selfhost/livekit.yaml \
+             selfhost/kern-backup.sh "$I/"
+          cp -R selfhost/postgres-init "$I/postgres-init"
+          chmod +x "$I/kern-backup.sh"
+          sed -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-postgres/' \
+              -e 's/^KERN_DB_APP_PASSWORD=.*/KERN_DB_APP_PASSWORD=ci-app/' \
+              -e 's/^S3_SECRET_KEY=.*/S3_SECRET_KEY=ci-secret-key/' selfhost/.env.example > "$I/.env"
+
+          inst up -d postgres minio
+          for i in $(seq 1 40); do
+            [ "$(inst ps --format '{{.Health}}' postgres)" = "healthy" ] && break
+            [ "$i" = "40" ] && { echo "::error::postgres never became healthy"; inst logs postgres; exit 1; }
+            sleep 2
+          done
+          inst run --rm db-init >/dev/null
+
+          # A dump is only as good as the shapes it has to carry, so this is the awkward half of a
+          # Kern schema rather than a few tables: a partitioned parent with its partitions, a
+          # sequence no column owns, an identity and two serials, forced row-level security with
+          # policies, an enum, a view, a routine, a vector column, an ltree, a trigram index, and
+          # module-inventory's gist exclusion constraint — the one that needs btree_gist.
+          cat > "$W/seed.sql" <<'SQL'
+          create type public.member_role as enum ('owner', 'admin', 'member');
+
+          create table public.workspaces (
+            id uuid primary key default gen_random_uuid(),
+            slug text not null unique,
+            name text not null,
+            path ltree,
+            created_at timestamptz not null default now()
+          );
+
+          create table public.memberships (
+            id bigserial primary key,
+            workspace_id uuid not null references public.workspaces(id) on delete cascade,
+            email text not null,
+            role public.member_role not null default 'member',
+            unique (workspace_id, email)
+          );
+          alter table public.memberships enable row level security;
+          alter table public.memberships force row level security;
+          create policy memberships_ws on public.memberships using (
+            workspace_id::text = current_setting('app.workspace_id', true)
+            or current_setting('app.workspace_id', true) = '*'
+          );
+
+          create schema mod_ci_a;
+
+          create table mod_ci_a.things (
+            id uuid primary key default gen_random_uuid(),
+            workspace_id uuid not null references public.workspaces(id) on delete cascade,
+            name text not null,
+            embedding vector(3),
+            tags text
+          );
+          create index things_name_trgm on mod_ci_a.things using gin (name gin_trgm_ops);
+          alter table mod_ci_a.things enable row level security;
+          alter table mod_ci_a.things force row level security;
+          create policy things_ws on mod_ci_a.things using (
+            workspace_id::text = current_setting('app.workspace_id', true)
+          );
+
+          create table mod_ci_a.punches (
+            id bigint generated by default as identity,
+            workspace_id uuid not null,
+            at timestamptz not null,
+            minutes integer not null,
+            primary key (id, at)
+          ) partition by range (at);
+          create table mod_ci_a.punches_2026q1 partition of mod_ci_a.punches
+            for values from ('2026-01-01') to ('2026-04-01');
+          create table mod_ci_a.punches_2026q2 partition of mod_ci_a.punches
+            for values from ('2026-04-01') to ('2026-07-01');
+          create table mod_ci_a.punches_2026q3 partition of mod_ci_a.punches
+            for values from ('2026-07-01') to ('2026-10-01');
+          alter table mod_ci_a.punches enable row level security;
+          alter table mod_ci_a.punches force row level security;
+          create policy punches_ws on mod_ci_a.punches using (
+            workspace_id::text = current_setting('app.workspace_id', true)
+          );
+
+          create schema mod_ci_b;
+
+          create table mod_ci_b.custody (
+            id uuid primary key default gen_random_uuid(),
+            asset_id uuid not null,
+            held timestamptz not null,
+            released timestamptz,
+            exclude using gist (asset_id with =, tstzrange(held, released) with &&)
+          );
+
+          create table mod_ci_b.notes (
+            id serial primary key,
+            body text not null,
+            created_at timestamptz not null default now()
+          );
+
+          create sequence mod_ci_b.counter_seq;
+
+          create function mod_ci_b.note_count() returns bigint language sql stable as
+            $fn$ select count(*) from mod_ci_b.notes $fn$;
+
+          create view mod_ci_b.recent_notes as
+            select id, body from mod_ci_b.notes order by id desc limit 10;
+
+          insert into public.workspaces (slug, name, path)
+          select 'ws-' || g, 'Workspace ' || g, text2ltree('root.ws' || g) from generate_series(1, 3) g;
+
+          insert into public.memberships (workspace_id, email, role)
+          select w.id, 'person' || g || '@' || w.slug || '.example',
+                 (array['owner','admin','member'])[1 + (g % 3)]::public.member_role
+          from public.workspaces w, generate_series(1, 7) g;
+
+          insert into mod_ci_a.things (workspace_id, name, embedding, tags)
+          select w.id, 'thing ' || g, array[g, g * 2, g * 3]::vector, 'a,b,c'
+          from public.workspaces w, generate_series(1, 200) g;
+
+          insert into mod_ci_a.punches (workspace_id, at, minutes)
+          select w.id, timestamptz '2026-01-15 08:00+00' + (g || ' days')::interval, 30 + (g % 400)
+          from public.workspaces w, generate_series(0, 240) g;
+
+          insert into mod_ci_b.custody (asset_id, held, released)
+          select gen_random_uuid(), timestamptz '2026-02-01' + (g || ' days')::interval,
+                 timestamptz '2026-02-01' + (g || ' days')::interval + interval '12 hours'
+          from generate_series(1, 60) g;
+
+          insert into mod_ci_b.notes (body) select 'note ' || g from generate_series(1, 137) g;
+
+          select setval('mod_ci_b.counter_seq', 4242);
+          SQL
+
+          inst exec -T postgres psql -U kern -d kern -q -v ON_ERROR_STOP=1 -f - < "$W/seed.sql" >/dev/null
+          # Every boot runs db-init, and it is what hands objects a migration just created to
+          # kern_app. Running it here is what makes the ownership in the census mean something.
+          inst run --rm db-init >/dev/null
+
+          inst run --rm --no-deps --entrypoint /bin/sh minio-init -c "
+            mc alias set src http://minio:9000 kern ci-secret-key >/dev/null &&
+            mc mb -p src/kern >/dev/null &&
+            echo 'attachment one' | mc pipe src/kern/ws1/a.txt >/dev/null &&
+            printf 'binary\\000payload' | mc pipe src/kern/ws2/deep/b.bin >/dev/null" >/dev/null
+
+          # Rows alone are not the claim a backup makes. A dump that carried every row and lost the
+          # policies would restore an instance in which every workspace reads every other one, and
+          # a row count cannot see that — so ownership, the forced-RLS flags, the policies, the
+          # indexes, the constraints, the routines, the types and the sequence positions are all in
+          # the census beside the counts. `relkind in ('r','p')`, because a partitioned parent is
+          # filed as 'p' and a census that asks only for 'r' skips the biggest table in silence.
+          cat > "$W/census.sql" <<'SQL'
+          set timezone = 'UTC';
+          set extra_float_digits = 0;
+
+          select 'extension ' || extname from pg_extension where extname <> 'plpgsql';
+
+          select 'schema ' || nspname || ' owner=' || pg_get_userbyid(nspowner)
+          from pg_namespace where nspname in ('public', 'mod_ci_a', 'mod_ci_b');
+
+          select 'relation ' || n.nspname || '.' || c.relname
+                 || ' kind=' || c.relkind::text
+                 || ' owner=' || pg_get_userbyid(c.relowner)
+                 || ' rls=' || c.relrowsecurity::text || ' force=' || c.relforcerowsecurity::text
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b')
+            and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f');
+
+          select 'column ' || n.nspname || '.' || c.relname || '.' || a.attname
+                 || ' ' || format_type(a.atttypid, a.atttypmod)
+                 || ' notnull=' || a.attnotnull::text
+                 || ' default=' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-')
+          from pg_attribute a
+            join pg_class c on c.oid = a.attrelid
+            join pg_namespace n on n.oid = c.relnamespace
+            left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b')
+            and c.relkind in ('r', 'p', 'v', 'm')
+            and a.attnum > 0 and not a.attisdropped;
+
+          select 'policy ' || n.nspname || '.' || c.relname || '.' || p.polname
+                 || ' ' || coalesce(pg_get_expr(p.polqual, p.polrelid), '-')
+          from pg_policy p join pg_class c on c.oid = p.polrelid
+            join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b');
+
+          select 'index ' || indexdef from pg_indexes
+          where schemaname in ('public', 'mod_ci_a', 'mod_ci_b');
+
+          select 'constraint ' || n.nspname || '.' || c.relname || '.' || o.conname
+                 || ' ' || pg_get_constraintdef(o.oid)
+          from pg_constraint o join pg_class c on c.oid = o.conrelid
+            join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b');
+
+          select 'routine ' || p.oid::regprocedure::text || ' owner=' || pg_get_userbyid(p.proowner)
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b');
+
+          select 'type ' || t.oid::regtype::text || ' labels=' || coalesce(
+                   (select string_agg(e.enumlabel, ',' order by e.enumsortorder)
+                    from pg_enum e where e.enumtypid = t.oid), '-')
+          from pg_type t join pg_namespace n on n.oid = t.typnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b') and t.typtype = 'e';
+
+          select format(
+            'select %L || '' rows='' || count(*) || '' sha='' || coalesce(md5(string_agg(h, '''' order by h)), ''empty'') from (select md5(t::text) as h from %s t) s',
+            'data ' || n.nspname || '.' || c.relname,
+            format('%I.%I', n.nspname, c.relname))
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b') and c.relkind in ('r', 'p')
+          \gexec
+
+          -- A sequence restored at 1 hands the next insert a primary key that is already taken.
+          select format('select %L || '' last='' || last_value || '' called='' || is_called from %s',
+                        'sequence ' || n.nspname || '.' || c.relname,
+                        format('%I.%I', n.nspname, c.relname))
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'mod_ci_a', 'mod_ci_b') and c.relkind = 'S'
+          \gexec
+          SQL
+
+          census() { # census <inst|newh> <outfile>
+            "$1" exec -T postgres psql -U kern -d kern -tA -v ON_ERROR_STOP=1 -f - < "$W/census.sql" \
+              | LC_ALL=C sort > "$2"
+          }
+          census inst "$W/census.source"
+          echo "✔ seeded: $(grep -c . "$W/census.source") catalogue and data facts"
+
+          # ------------------------------------------------ the backup, run as it ships
+
+          ( cd "$I" && COMPOSE_PROJECT_NAME=kern-drill-src ./kern-backup.sh ) > "$W/backup.out" 2>&1 \
+            || { echo "::error::kern-backup.sh failed"; cat "$W/backup.out"; exit 1; }
+          D=$(ls -1d "$I"/backups/[0-9]*-[0-9]*/ | head -1); D="${D%/}"
+          [ -s "$D/database.dump" ] || { echo "::error::no dump in $D"; ls -l "$D"; exit 1; }
+          [ -f "$D/RESTORE.txt" ] || { echo "::error::no RESTORE.txt in $D"; ls -l "$D"; exit 1; }
+          echo "✔ backup published $(basename "$D")"
+
+          # ------------------------------------------------ follow RESTORE.txt
+
+          python3 - "$D/RESTORE.txt" "$W/steps" <<'PY'
+          import re, shlex, sys
+
+          body = open(sys.argv[1]).read().split("To restore onto an empty host", 1)[1]
+
+          # A step is `<n>. ` at the margin, its prose wraps at three spaces, and its commands are
+          # indented past that. A line back at the margin ends the list.
+          steps, num = {}, None
+          for line in body.splitlines():
+              if re.match(r"^(\d+)\. ", line):
+                  num = int(line.split(".", 1)[0]); steps[num] = []
+              elif num is None or not line.strip():
+                  continue
+              elif line.startswith("       "):
+                  steps[num].append(line.rstrip())
+              elif not line.startswith("   "):
+                  num = None
+
+          # Two things continue a command: a trailing backslash, and a quote that is still open.
+          # The mirror in step 4 is both — `\` after its first line, an unclosed `-c "` after the
+          # second — so a joiner that only knows about backslashes cuts it into three fragments.
+          def commands(lines):
+              buf = ""
+              for raw in lines:
+                  line = raw.strip()
+                  buf = (buf + " " + (line[:-1] if line.endswith("\\") else line)).strip()
+                  if line.endswith("\\"):
+                      continue
+                  try:
+                      shlex.split(buf)
+                  except ValueError:
+                      continue          # a quote is still open
+                  yield buf
+                  buf = ""
+              assert not buf, f"unterminated command: {buf}"
+
+          out = [f"{n}\t{c}" for n in sorted(steps) for c in commands(steps[n])]
+
+          # A step this parser cannot see is a step nothing runs, and the drill would report a
+          # clean pass having skipped it — which is exactly what it did the first time it was
+          # written, to the two steps whose prose wraps onto a second line. So the shape of the
+          # file is asserted rather than hoped for.
+          found = sorted({int(l.split("\t")[0]) for l in out})
+          assert found == [1, 2, 3, 4, 5], f"RESTORE.txt steps carrying commands: {found}, expected 1..5"
+          open(sys.argv[2], "w").write("\n".join(out) + "\n")
+          PY
+          cat "$W/steps"
+
+          # Step 1 is done here rather than run, and step 5 is not exercised at all. Both are named
+          # so the coverage this claims is the coverage it has:
+          #   1  its one command downloads install.sh, which the same step then says not to run.
+          #   5  `docker compose up -d` needs this release's five service images out of GHCR.
+          # Everything between them — the database and the object storage — is run for real.
+          cp "$D/.env" "$D/docker-compose.yml" "$D/Caddyfile" "$D/livekit.yaml" "$N/"
+          cp -R "$D/postgres-init" "$N/postgres-init"
+          cp "$D/database.dump" "$N/database.dump"
+          cp -R "$D/files" "$N/files"
+
+          AK=$(grep -E '^S3_ACCESS_KEY=' "$N/.env" | cut -d= -f2- | tr -d "'\"")
+          SK=$(grep -E '^S3_SECRET_KEY=' "$N/.env" | cut -d= -f2- | tr -d "'\"")
+
+          while IFS=$'\t' read -r step cmd; do
+            case "$step" in 1|5) continue ;; esac
+            cmd=${cmd//<S3_ACCESS_KEY>/$AK}
+            cmd=${cmd//<S3_SECRET_KEY>/$SK}
+            echo "--- RESTORE.txt step $step: $cmd"
+            ( cd "$N" && COMPOSE_PROJECT_NAME=kern-drill-dst sh -c "$cmd" ) > "$W/step.out" 2> "$W/step.err" || {
+              echo "::error::RESTORE.txt step $step did not work: $cmd"
+              cat "$W/step.out" "$W/step.err"; exit 1; }
+            # pg_restore prints a refused object and carries on, so the exit status is not the whole
+            # answer; `mc` says <ERROR> the same way.
+            if grep -qiE 'error:|<error>' "$W/step.err"; then
+              echo "::error::RESTORE.txt step $step reported an error"; cat "$W/step.err"; exit 1
+            fi
+          done < "$W/steps"
+          echo "✔ every command in RESTORE.txt ran clean"
+
+          # ------------------------------------------------ is it the same database?
+
+          census newh "$W/census.restored"
+          if ! diff -u "$W/census.source" "$W/census.restored" > "$W/census.diff"; then
+            echo "::error::the restored database is not the database that was backed up"
+            cat "$W/census.diff"; exit 1
+          fi
+          echo "✔ $(grep -c . "$W/census.source") facts identical across the dump"
+
+          newh run --rm --no-deps --entrypoint /bin/sh minio-init -c "
+            mc alias set dst http://minio:9000 '$AK' '$SK' >/dev/null &&
+            mc cat dst/kern/ws1/a.txt && mc cat dst/kern/ws2/deep/b.bin" > "$W/objects" 2>/dev/null
+          printf 'attachment one\nbinary\000payload' > "$W/objects.expected"
+          cmp "$W/objects" "$W/objects.expected" \
+            || { echo "::error::the object storage mirror did not come back"; exit 1; }
+          echo "✔ object storage restored, byte for byte"
+
+          # A comparison that has never reported a difference is not known to be able to. One row
+          # goes, and the diff that just passed has to fail.
+          newh exec -T postgres psql -U kern -d kern -q -c "delete from mod_ci_b.notes where id = 7" >/dev/null
+          census newh "$W/census.sabotaged"
+          if diff -q "$W/census.source" "$W/census.sabotaged" >/dev/null; then
+            echo "::error::a row was deleted from the restored database and the census did not notice"
+            exit 1
+          fi
+          diff "$W/census.source" "$W/census.sabotaged" | head -4 || true
+          echo "✔ the census catches a single missing row"
+
       # kern-auto-update.service is Type=oneshot, so any non-zero status paints the unit red. The
       # CLI recorded the outcome before the stack-file verdict and then exited 1 for a blocked
       # stack, so the panel showed the release applied while systemd showed a failed unit — every
