@@ -181,6 +181,17 @@ The repositories are **public**, so every commit is visible the moment it is pus
   says `counters` is unsecured when the migration secures it. Each module's `migrations.test.ts`
   asks that question now. The tables still deliberately outside a policy, with the reason, are in
   `TODO.md` slice 5.
+- **A `relkind = 'r'` catalogue query cannot see a partitioned table, and reports nothing when it
+  skips one.** `pg_class` files a partitioned parent as `'p'`, so the RLS audit query everything in
+  this project was measured with looked straight past `mod_hr.punches` — the one table whose whole
+  reason for being partitioned is that it is the largest tenant table we have. It happens to be
+  secured, along with all 18 of its partitions, so the omission cost nothing this time and would
+  have cost everything the day it was not. `relkind in ('r','p')` is the fix, and the general shape
+  is that a catalogue filter is an assertion about what exists: the rows it excludes are invisible
+  in its output, so an audit that under-selects looks exactly like an audit that found nothing
+  wrong. Measured 2026-09-06 on a database created from nothing — which is also the only place
+  these numbers mean anything, because the dev database's schema predates several of the policies
+  and reports four secured tables as unsecured.
 - **A table that legitimately serves every workspace at once binds `'*'`, never nothing.** Chat's
   policies admit `app.workspace_id = '*'` for the gateway's cross-workspace checks, and mail's do
   the same for the send job, the provider webhooks and the suppression check. The alternative —
