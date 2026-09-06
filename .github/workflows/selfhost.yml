@@ -764,7 +764,12 @@ jobs:
             echo "--- RESTORE.txt step $step: $cmd"
             ( cd "$N" && COMPOSE_PROJECT_NAME=kern-drill-dst sh -c "$cmd" ) > "$W/step.out" 2> "$W/step.err" || {
               echo "::error::RESTORE.txt step $step did not work: $cmd"
-              cat "$W/step.out" "$W/step.err"; exit 1; }
+              cat "$W/step.out" "$W/step.err"
+              echo "--- what the new host looks like ---"
+              ls -la "$N" "$N/postgres-init" || true
+              newh ps -a || true
+              newh logs --tail 40 postgres || true
+              exit 1; }
             # pg_restore prints a refused object and carries on, so the exit status is not the whole
             # answer; `mc` says <ERROR> the same way.
             if grep -qiE 'error:|<error>' "$W/step.err"; then
