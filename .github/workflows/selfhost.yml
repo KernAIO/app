@@ -703,7 +703,10 @@ jobs:
             *0) ;;
             *) echo "::error::.env in the backup is $(mode "$D/.env") — another user on this host can read every secret"; exit 1 ;;
           esac
-          for f in "$D"/postgres-init/*.sql; do
+          # The directory as well as the files: at 0700 the container cannot even list the mount,
+          # which is what run 34039806831 showed — "ls: cannot open directory
+          # '/docker-entrypoint-initdb.d/': Permission denied", on a loop, because it restarts.
+          for f in "$D/postgres-init" "$D"/postgres-init/*.sql; do
             case "$(mode "$f")" in
               *[4567]) ;;
               *) echo "::error::$f is $(mode "$f") — the Postgres container on the restored host cannot read it"; exit 1 ;;

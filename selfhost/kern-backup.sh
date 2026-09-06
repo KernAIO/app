@@ -203,13 +203,15 @@ chmod -R go-rwx "$WORK"
 # postgres-init/ is the exception, and it is the only one: every other file here is read by the
 # operator or by a container that runs as root (caddy and livekit both do, checked 2026-09-06),
 # while these are read by the *Postgres* container on the restored host, which runs as uid 999.
-# The blanket chmod above leaves them 0600 owned by whoever took the backup, `cp` carries that
-# mode onto the new host, and the entrypoint then dies with
-# "psql: error: /docker-entrypoint-initdb.d/01-extensions.sql: Permission denied" — the container
-# exits 1, so the database the restore is for never starts and step 3 of RESTORE.txt reports
-# postgres as unhealthy. Measured 2026-09-06 against pgvector/pgvector:pg18. There is no secret
-# in here: it is CREATE EXTENSION and nothing else. The backup directory is still go-rwx, so this
-# is not reachable by another user on this machine either way.
+# The blanket chmod above leaves the directory 0700 and the file 0600, owned by whoever took the
+# backup; `cp` carries both modes onto the new host, and the entrypoint then cannot even list the
+# mount: "ls: cannot open directory '/docker-entrypoint-initdb.d/': Permission denied", over and
+# over, because the container restarts. So the database the restore is for never starts, and step
+# 3 of RESTORE.txt reports postgres as unhealthy. Measured on a Linux runner on 2026-09-06 against
+# pgvector/pgvector:pg18; it never reproduces on a Mac, where Docker Desktop presents a bind mount
+# to the container as its own user. There is no secret in here — it is CREATE EXTENSION and
+# nothing else — and the backup directory itself is still go-rwx, so nothing became reachable to
+# another user on the machine that took it.
 [ -d "$WORK/postgres-init" ] && chmod -R go+rX "$WORK/postgres-init"
 info "configuration copied (.env included — treat this directory as a secret)"
 
