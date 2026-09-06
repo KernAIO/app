@@ -78,10 +78,16 @@ The repositories are **public**, so every commit is visible the moment it is pus
   module with it. `pnpm.overrides`
   still forces one resolved kernel copy per process — that is a different job (no two kernel
   instances) from the peer check (is the one instance right for what depends on it), and both are
-  still needed. This is also what makes `renovate.json`'s existing `@kernhq/*` automerge safe to lean
-  on: a module version bump merges the day it is compatible with the kernel already pinned, and stays
-  red — not silently wrong — until the kernel catches up. See
-  `docs/adr/0009-independent-kernel-and-module-release-cadence.md`.
+  still needed. What moves those pins is `scripts/reach.mjs`, run by `release.yml` before it tags —
+  **not Renovate**, which has opened zero pull requests in any repository since it was installed
+  (measured across all seventeen on 2026-09-06). This bullet claimed for months that the
+  `@kernhq/*` automerge was "safe to lean on", while the bullet near the end of this file said it
+  had never run: one file, two answers, and the reassuring one was where somebody deciding how to
+  release would look. The `packageRules` block naming `^@kernhq/` is removed from every
+  `renovate.json` now — dead is one thing, but a rule that automerges a module bump into *one*
+  repository is precisely the state `release.yml` refuses to tag on, so had it ever started working
+  it would have broken the release rather than helped it. See
+  `docs/adr/0009-independent-kernel-and-module-release-cadence.md` and its addendum.
 - **Every migration must leave the database readable by the image before it.** Add nullable columns
   and new tables; drop and rename one release later. This is what makes rolling an image back work
   without restoring a dump, and on cloud a rolling deploy runs both images against one schema on

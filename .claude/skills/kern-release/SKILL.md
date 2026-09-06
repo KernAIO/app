@@ -54,8 +54,15 @@ version.
 4. `app` last.
 
 Merging a consumer first does not "just fail its own build" — it fails on the registry, in a repo you
-then have to fix under pressure. Renovate automerges `^@kernhq/` bumps at any time, so consumers
-often catch up on their own once the publish lands; check before hand-editing versions.
+then have to fix under pressure. What catches consumers up once a publish lands is `scripts/reach.mjs`,
+run by `release.yml` before it tags: it advances every service to the newest compatible `@kernhq/*`
+set and lands all five on `main` or none. Check whether the reach has already done it before hand-editing
+a version.
+
+This paragraph used to say Renovate automerged `^@kernhq/` bumps at any time. It never did — zero
+pull requests in any repository since it was installed, measured 2026-09-06 — and the rule has been
+removed, because an automerge that lands one repository's bump alone is the exact state `release.yml`
+refuses to tag on.
 
 ## Writing the changeset
 

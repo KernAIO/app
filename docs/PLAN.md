@@ -175,7 +175,7 @@ Legend: **(core)** always on · others enable/disable per workspace. "v1.x" = ri
 ### 4.10 Dev workflow (solo + Claude, multi-repo)
 
 - `KernAIO/kern` = dev workspace: `scripts/dev-setup.sh` clones `app core chat mail collab kernel modules docs` into `repos/` (gitignored); root `pnpm-workspace.yaml` = `repos/*`, `repos/kernel/packages/*`, `repos/modules/packages/*` → pnpm links everything; `docker compose -f dev/compose.yml` runs infra only; `turbo dev` runs services with hot reload. Each repo also builds standalone in CI using published `@kernhq/*` (`^0.x`).
-- Shared libs: Changesets + automated prerelease publish to npm (`@kernhq`) on every merge to `main` in `kernel`/`modules`; Renovate keeps consumers bumped.
+- Shared libs: Changesets + automated prerelease publish to npm (`@kernhq`) on every merge to `main` in `kernel`/`modules`; `scripts/reach.mjs`, run by `release.yml` before it tags, is what keeps consumers bumped. *(This line said "Renovate keeps consumers bumped" until 2026-09-06. Renovate has opened zero pull requests in any repository since it was installed, and its `@kernhq/*` automerge rule is now removed — see ADR 0009's addendum. The two lines above and below still describe the superseded `KernAIO/kern` + `repos/modules` layout; this file is the origin plan and has not been re-derived against what exists.)*
 - Tooling everywhere: Node 24, pnpm 10, Turborepo, TypeScript strict, Biome, Vitest, Playwright (app), Testcontainers (core), Conventional Commits, GitHub Actions (lint/test/build/image), Dependabot/Renovate.
 
 ---
