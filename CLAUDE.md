@@ -616,6 +616,16 @@ pnpm dev       # every service with hot reload
   container against stub upstreams and curling each path to see which upstream answers — `caddy
   validate` only says the file parses (and until 2026-09-06 CI ran it on the two inline copies and
   never on `selfhost/Caddyfile`, the one that ships), and the drift check only says the three match.
+  **A new Caddy route is two edits, and the second one is in another repository.** A workspace slug
+  shares one namespace with every path the proxy answers, so a route added without reserving the
+  name gives somebody a workspace that exists and resolves to the wrong upstream. `RESERVED_SLUGS`
+  in `core/src/modules/core/services/workspaces.ts` is the other half, and its own comment says "add
+  the name in the commit that adds the route" — which did not stop `/livekit` going in without it
+  hours later on 2026-09-06. Reserve the name in `PROXY_PREFIXES` in
+  `core/src/tests/reserved-slugs.test.ts` as well, and that is the edit that actually matters: the
+  two assertions in that file which read the real Caddy files are `skipIf` the umbrella is absent,
+  which is every CI run core has, so a route added here is caught by that hand-kept enumeration or
+  by nothing. A test that silently skips in CI is worth exactly what it costs to write.
 - **An upgrade brings the stack files forward now, and until 2026-09-05 it never did.** `install.sh`
   fetches a distribution file only when it is absent (`[ -f "$f" ] || curl`) and `kern-upgrade.sh`
   only changed `KERN_VERSION` and pulled images, so an existing instance kept the
