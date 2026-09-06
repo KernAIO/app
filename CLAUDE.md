@@ -222,6 +222,20 @@ The repositories are **public**, so every commit is visible the moment it is pus
   all three shipped: importing `$app/state`, importing your own barrel, and a local called `t`
   shadowing the message function. Each module package type-checks its own client — that is the only
   thing that sees them. See `docs/adr/0008-a-module-ships-its-own-screens.md`.
+- **The guard that proved a module's client is actually inside its tarball did not survive the
+  repository split, and nothing replaced it.** `pnpm check:pack` packed each module for real and
+  walked every relative import from the published `./client` entry — necessary because that entry
+  ships as *source*, so an import reaching outside the tarball type-checks, builds, publishes, and
+  breaks only when a consumer installs it. It caught exactly that twice: `../kql/ast.js` unreachable
+  from the packed tree, and a `./client` export in `@kernhq/module-chat` pointing at a file nobody
+  had written. It lived in `KernAIO/modules`, which is archived, and none of the nine module
+  repositories has any packaging guard today (checked 2026-09-06). `check:versions` is named in the
+  same breath in a couple of places and has never existed at all.
+  The general shape is worth more than the script: **splitting a monorepo silently drops every check
+  that lived at its root.** The per-package tests come along because they sit beside the package;
+  anything that ran *across* packages has no new home and no owner, and its absence looks exactly
+  like a repository that has no such problem. When a repo is split, enumerate the root scripts
+  before deleting it and decide, one at a time, where each one goes.
 - **A local named after a rune deletes the rune.** `const state = $derived(query.data)` and then
   `let busy = $state(false)` in the same file: Svelte reads the second `$state` as a store
   subscription to the first, and `svelte-check` says "Cannot use 'state' as a store", which sounds
